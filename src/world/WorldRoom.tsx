@@ -7,7 +7,8 @@ import { useWorld } from './store';
 import { WorldIntro, WorldOnboarding } from './Onboarding';
 import { WorldDiscover } from './Discover';
 import { HelloFlow, type HelloStep } from './HelloFlow';
-import { WorldHellos, WorldMessages, WorldMyProfile, WorldThread } from './Tabs';
+import { WorldHellos, WorldMessages, WorldThread } from './Tabs';
+import { WorldMyProfile } from './MyProfile';
 import { WorldDock, WorldToast, worldBg, type WorldTab } from './ui';
 
 // World Room : un espace à part dans Zembo, avec sa propre barre d'onglets
