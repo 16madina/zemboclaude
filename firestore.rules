@@ -1,0 +1,55 @@
+rules_version = '2';
+
+// Règles de sécurité Firestore du projet « Zembo Claude ».
+// Principe : chacun ne peut créer, modifier ou supprimer que ses propres données.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isMe(uid) { return signedIn() && request.auth.uid == uid; }
+
+    // Fiche du compte Zembo
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isMe(uid)
+        && request.resource.data.keys().hasAll(['nom', 'prenom', 'pseudo', 'email'])
+        && request.resource.data.pseudo is string
+        && request.resource.data.pseudo.size() >= 3
+        && request.resource.data.pseudo.size() <= 20;
+      // le pseudo ne peut pas être changé directement (il est réservé dans /usernames)
+      allow update: if isMe(uid) && request.resource.data.pseudo == resource.data.pseudo;
+      allow delete: if isMe(uid);
+    }
+
+    // Réservation des pseudos Zembo (un pseudo = un compte).
+    // Lecture ouverte : l'inscription vérifie si le pseudo est libre avant de créer le compte.
+    match /usernames/{name} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
+    // Profil World Room : visible par les membres connectés une fois terminé
+    match /worldProfiles/{uid} {
+      allow read: if isMe(uid) || (signedIn() && resource.data.completed == true);
+      allow create, update: if isMe(uid);
+      allow delete: if isMe(uid);
+    }
+
+    // Réservation des pseudos World Room
+    match /worldUsernames/{name} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
+    // Tout le reste est fermé par défaut
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

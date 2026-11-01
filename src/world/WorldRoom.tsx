@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme';
@@ -35,6 +35,18 @@ export function WorldRoom({ open, onClose }: { open: boolean; onClose: () => voi
 }
 
 function Room({ onClose }: { onClose: () => void }) {
+  const w = useWorld();
+  if (!w.loaded)
+    return (
+      <View style={[styles.fill, { alignItems: 'center', justifyContent: 'center' }]}>
+        <Text style={{ fontSize: 34 }}>🌍</Text>
+        <ActivityIndicator color={colors.gold} style={{ marginTop: 14 }} />
+      </View>
+    );
+  return <RoomReady onClose={onClose} />;
+}
+
+function RoomReady({ onClose }: { onClose: () => void }) {
   const w = useWorld();
   const insets = useSafeAreaInsets();
   const [screen, setScreen] = useState<'intro' | 'onboarding' | 'main'>(w.profile.completed ? 'main' : 'intro');

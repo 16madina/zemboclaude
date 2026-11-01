@@ -20,6 +20,9 @@ import {
   type WorldProfile,
 } from './data';
 import { tap, useWorld } from './store';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useSession } from '../lib/session';
 import { Chip, GoldButton, OutlineButton, WorldTitle, worldBg } from './ui';
 
 // Écran d'accueil World Room (avant la création du profil)
@@ -91,10 +94,30 @@ export function WorldIntro({ onBack, onStart }: { onBack: () => void; onStart: (
 
 // Les 7 étapes de création du profil World Room
 export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number; onExit: () => void; onDone: () => void }) {
-  const { profile, setProfile, showToast } = useWorld();
+  const { profile, setProfile, saveProfile, showToast } = useWorld();
+  const { user: account } = useSession();
   const [step, setStep] = useState(start);
   const [d, setD] = useState<WorldProfile>(profile);
+  const [saving, setSaving] = useState(false);
+  const [remote, setRemote] = useState<'checking' | 'free' | 'taken' | null>(null);
   const set = (patch: Partial<WorldProfile>) => setD((x) => ({ ...x, ...patch }));
+
+  // vérification réelle du pseudo World dans la base (il doit être unique)
+  useEffect(() => {
+    const name = d.username.trim();
+    if (step !== 1 || name.length < 3) return setRemote(null);
+    setRemote('checking');
+    let active = true;
+    const t = setTimeout(() => {
+      getDoc(doc(db, 'worldUsernames', name))
+        .then((snap) => active && setRemote(snap.exists() && snap.data().uid !== account?.uid ? 'taken' : 'free'))
+        .catch(() => active && setRemote('free'));
+    }, 350);
+    return () => {
+      active = false;
+      clearTimeout(t);
+    };
+  }, [d.username, step, account?.uid]);
 
   const next = () => {
     setProfile(d);
@@ -102,12 +125,13 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
   };
   const back = () => (step === 1 ? onExit() : setStep(step - 1));
 
-  const user = checkUsername(d.username);
+  const local = checkUsername(d.username);
+  const user = local === 'ok' && remote === 'taken' ? 'taken' : local;
   const age = ageNumber(d.age);
 
   if (step === 1)
     return (
-      <Step step={1} title="Choisis ton pseudo" subtitle="C'est ton identifiant public dans World Room." onBack={back} ctaDisabled={user !== 'ok'} onCta={next}>
+      <Step step={1} title="Choisis ton pseudo" subtitle="C'est ton identifiant public dans World Room." onBack={back} ctaDisabled={user !== 'ok' || remote !== 'free'} onCta={next}>
         <Label text="Pseudo" required />
         <View style={styles.inputRow}>
           <Text style={styles.at}>@</Text>
@@ -124,7 +148,8 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
             selectionColor={colors.gold}
           />
         </View>
-        {user === 'ok' && <Text style={styles.ok}>✓ Pseudo disponible</Text>}
+        {user === 'ok' && remote === 'checking' && <Text style={styles.hint}>Vérification…</Text>}
+        {user === 'ok' && remote === 'free' && <Text style={styles.ok}>✓ Pseudo disponible</Text>}
         {user === 'taken' && <Text style={styles.bad}>✗ Ce pseudo est déjà pris</Text>}
         {user === 'short' && <Text style={styles.hint}>Au moins 3 caractères.</Text>}
         {user === 'empty' && <Text style={styles.hint}>Ton identifiant public, visible sur ta World Card.</Text>}
@@ -314,11 +339,21 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
       title="Ton profil est prêt !"
       subtitle="Voici un aperçu de ce que les autres verront."
       onBack={back}
-      cta="Entrer dans World Room"
-      onCta={() => {
-        setProfile({ ...d, completed: true });
-        showToast('Profil World Room enregistré');
-        onDone();
+      cta={saving ? 'Enregistrement…' : 'Entrer dans World Room'}
+      ctaDisabled={saving}
+      onCta={async () => {
+        setSaving(true);
+        try {
+          await saveProfile({ ...d, completed: true });
+          showToast('Profil World Room enregistré');
+          onDone();
+        } catch (e) {
+          const taken = (e as Error)?.message === 'pseudo-world-pris';
+          showToast(taken ? 'Ce pseudo vient d’être pris, choisis-en un autre' : 'Enregistrement impossible, réessaie');
+          if (taken) setStep(1);
+        } finally {
+          setSaving(false);
+        }
       }}
       secondary="Modifier"
       onSecondary={() => setStep(1)}

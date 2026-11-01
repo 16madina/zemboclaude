@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +10,7 @@ import { LIKED, ME, MY_POSTS, SAVED } from '../data/social';
 import { formatCount } from '../utils/format';
 import { VideoViewer } from '../components/VideoViewer';
 import { Sheet } from '../table/TableSheets';
+import { useSession } from '../lib/session';
 
 type Tab = 'posts' | 'private' | 'saved' | 'liked';
 const TABS: { key: Tab; icon: keyof typeof Ionicons.glyphMap; on: keyof typeof Ionicons.glyphMap }[] = [
@@ -22,6 +23,33 @@ const LISTS: Record<Tab, Post[]> = { posts: MY_POSTS, private: [], saved: SAVED,
 
 // Onglet Profil de l'utilisatrice connectée
 export function ProfileScreen({ onStartTable }: { onStartTable: () => void }) {
+  const { user, profile } = useSession();
+  // pas connecté : invitation à se connecter (comme TikTok)
+  if (!user) return <SignedOut />;
+  return <ProfileView onStartTable={onStartTable} name={profile?.prenom || ME.name} handle={profile?.pseudo || ME.handle} />;
+}
+
+function SignedOut() {
+  const insets = useSafeAreaInsets();
+  const { requireAuth } = useSession();
+  return (
+    <View style={[styles.root, { paddingTop: insets.top, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 }]}>
+      <View style={styles.outIcon}>
+        <Ionicons name="person-outline" size={46} color={colors.gold} />
+      </View>
+      <Text style={styles.outTitle}>Ton profil Zembo</Text>
+      <Text style={styles.outSub}>Inscris-toi pour publier, lancer tes lives et retrouver tes abonnés.</Text>
+      <Pressable onPress={() => requireAuth('')} style={{ alignSelf: 'stretch', marginTop: 24 }}>
+        <LinearGradient colors={goldGradient} style={styles.outBtn}>
+          <Text style={styles.outBtnText}>Se connecter ou s'inscrire</Text>
+        </LinearGradient>
+      </Pressable>
+    </View>
+  );
+}
+
+function ProfileView({ onStartTable, name, handle }: { onStartTable: () => void; name: string; handle: string }) {
+  const { signOut, deleteAccount } = useSession();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [tab, setTab] = useState<Tab>('posts');
@@ -42,7 +70,7 @@ export function ProfileScreen({ onStartTable }: { onStartTable: () => void }) {
       <View style={styles.top}>
         <Ionicons name="person-add-outline" size={23} color={colors.text} />
         <View style={styles.topName}>
-          <Text style={styles.topNameText}>{ME.name}</Text>
+          <Text style={styles.topNameText}>{name}</Text>
           <Ionicons name="chevron-down" size={16} color={colors.text} />
         </View>
         <View style={{ flexDirection: 'row', gap: 18 }}>
@@ -65,7 +93,7 @@ export function ProfileScreen({ onStartTable }: { onStartTable: () => void }) {
             </LinearGradient>
           </View>
           <View style={styles.handleRow}>
-            <Text style={styles.handle}>@{ME.handle}</Text>
+            <Text style={styles.handle}>@{handle}</Text>
             <Ionicons name="checkmark-circle" size={16} color={colors.gold} />
           </View>
 
@@ -180,6 +208,43 @@ export function ProfileScreen({ onStartTable }: { onStartTable: () => void }) {
             <Text style={styles.menuText}>{label}</Text>
           </Pressable>
         ))}
+        <Pressable
+          style={styles.menuRow}
+          onPress={() => {
+            setMenu(false);
+            signOut();
+          }}
+        >
+          <Ionicons name="log-out-outline" size={22} color={colors.text} />
+          <Text style={styles.menuText}>Se déconnecter</Text>
+        </Pressable>
+        <Pressable
+          style={styles.menuRow}
+          onPress={() => {
+            setMenu(false);
+            // suppression du compte depuis l'app : exigée par l'App Store
+            Alert.alert('Supprimer mon compte', 'Ton compte Zembo, ton profil World Room et tes données seront supprimés définitivement.', [
+              { text: 'Annuler', style: 'cancel' },
+              {
+                text: 'Supprimer',
+                style: 'destructive',
+                onPress: () =>
+                  deleteAccount().catch((e) => {
+                    const code = (e as { code?: string })?.code;
+                    Alert.alert(
+                      'Suppression impossible',
+                      code === 'auth/requires-recent-login'
+                        ? 'Pour des raisons de sécurité, déconnecte-toi, reconnecte-toi, puis réessaie.'
+                        : 'Une erreur est survenue. Réessaie.',
+                    );
+                  }),
+              },
+            ]);
+          }}
+        >
+          <Ionicons name="trash-outline" size={22} color="#F07167" />
+          <Text style={[styles.menuText, { color: '#F07167' }]}>Supprimer mon compte</Text>
+        </Pressable>
       </Sheet>
     </View>
   );
@@ -268,6 +333,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   toastText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  outIcon: { width: 100, height: 100, borderRadius: 50, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface },
+  outTitle: { color: colors.text, fontSize: 21, fontWeight: '900', marginTop: 18 },
+  outSub: { color: colors.textDim, fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  outBtn: { height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  outBtnText: { color: '#1D1405', fontSize: 15.5, fontWeight: '900' },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12 },
   menuText: { color: colors.text, fontSize: 15, fontWeight: '600' },
 });

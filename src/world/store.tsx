@@ -1,5 +1,8 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as Haptics from 'expo-haptics';
+import { deleteDoc, doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useSession } from '../lib/session';
 import {
   DEFAULT_HELLOS,
   EMPTY_PROFILE,
@@ -12,12 +15,17 @@ import {
   type WorldProfile,
 } from './data';
 
-// État partagé de World Room (en mémoire pour l'instant ; plus tard : Supabase, table world_profiles)
+// État partagé de World Room. Le profil World est enregistré dans Firestore (worldProfiles/{uid}) ;
+// les Hellos, connexions et messages sont encore des données de démonstration.
 
 type Ctx = {
   profile: WorldProfile;
+  /** le profil enregistré a fini de charger */
+  loaded: boolean;
   setProfile: (p: WorldProfile | ((p: WorldProfile) => WorldProfile)) => void;
-  resetProfile: () => void;
+  /** enregistre le profil dans la base (pseudo World unique) */
+  saveProfile: (p: WorldProfile) => Promise<void>;
+  resetProfile: () => Promise<void>;
   hellos: HelloState;
   pending: WorldPerson[];
   sent: WorldPerson[];
@@ -45,7 +53,57 @@ const people = (ids: string[]) => ids.map(findPerson).filter((p): p is WorldPers
 const REPLIES = ['Trop content de ce Hello mutuel 🙌', 'Haha exactement 😄', 'Raconte-moi plus !', 'On se refait une rencontre bientôt ?', '🌍💛'];
 
 export function WorldProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useSession();
   const [profile, setProfile] = useState<WorldProfile>(EMPTY_PROFILE);
+  const [loaded, setLoaded] = useState(false);
+
+  // charge le profil World du compte connecté
+  useEffect(() => {
+    let active = true;
+    setLoaded(false);
+    if (!user) {
+      setProfile(EMPTY_PROFILE);
+      setLoaded(true);
+      return;
+    }
+    getDoc(doc(db, 'worldProfiles', user.uid))
+      .then((snap) => {
+        if (!active) return;
+        setProfile(snap.exists() ? { ...EMPTY_PROFILE, ...(snap.data() as Partial<WorldProfile>) } : EMPTY_PROFILE);
+      })
+      .catch(() => active && setProfile(EMPTY_PROFILE))
+      .finally(() => active && setLoaded(true));
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const saveProfile = useCallback(
+    async (p: WorldProfile) => {
+      if (!user) throw new Error('non-connecte');
+      const name = p.username.trim();
+      await runTransaction(db, async (tx) => {
+        const profRef = doc(db, 'worldProfiles', user.uid);
+        const old = await tx.get(profRef);
+        const oldName = old.exists() ? (old.data().username as string | undefined) : undefined;
+        const nameRef = doc(db, 'worldUsernames', name);
+        const owner = await tx.get(nameRef);
+        if (owner.exists() && owner.data().uid !== user.uid) throw new Error('pseudo-world-pris');
+        if (!owner.exists()) tx.set(nameRef, { uid: user.uid });
+        if (oldName && oldName !== name) tx.delete(doc(db, 'worldUsernames', oldName));
+        tx.set(profRef, { ...p, username: name, updatedAt: serverTimestamp() });
+      });
+      setProfile(p);
+    },
+    [user],
+  );
+
+  const resetProfile = useCallback(async () => {
+    const name = profile.username;
+    setProfile(EMPTY_PROFILE);
+    if (!user) return;
+    await Promise.allSettled([deleteDoc(doc(db, 'worldProfiles', user.uid)), name ? deleteDoc(doc(db, 'worldUsernames', name)) : Promise.resolve()]);
+  }, [user, profile.username]);
   const [hellos, setHellos] = useState<HelloState>(DEFAULT_HELLOS);
   const [threads, setThreads] = useState<Record<string, WorldMsg[]>>({});
   const [unread, setUnread] = useState<Record<string, number>>(() =>
@@ -76,8 +134,10 @@ export function WorldProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<Ctx>(
     () => ({
       profile,
+      loaded,
       setProfile,
-      resetProfile: () => setProfile(EMPTY_PROFILE),
+      saveProfile,
+      resetProfile,
       hellos,
       pending: people(hellos.pending.filter((id) => !hellos.ignored.includes(id))),
       sent: people(hellos.sent.filter((id) => !hellos.connections.includes(id))),
@@ -97,7 +157,7 @@ export function WorldProvider({ children }: { children: React.ReactNode }) {
       toast,
       showToast,
     }),
-    [profile, hellos, threads, unread, sendMessage, toast, showToast],
+    [profile, loaded, saveProfile, resetProfile, hellos, threads, unread, sendMessage, toast, showToast],
   );
 
   return <WorldCtx.Provider value={value}>{children}</WorldCtx.Provider>;

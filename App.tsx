@@ -13,6 +13,8 @@ import { TableScreen } from './src/table/TableScreen';
 import { TableSetupSheet } from './src/table/TableSetupSheet';
 import type { TableConfig } from './src/table/data';
 import { WorldProvider } from './src/world/store';
+import { SessionProvider, useSession } from './src/lib/session';
+import { AuthGate } from './src/auth/AuthScreen';
 import { WorldRoom } from './src/world/WorldRoom';
 import { TalkShowPicker } from './src/talk/TalkShowPicker';
 import { SlamTherapie } from './src/talk/SlamTherapie';
@@ -20,6 +22,20 @@ import { MicroOuvert } from './src/talk/MicroOuvert';
 import type { TalkFormat } from './src/talk/TalkShowPicker';
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <SessionProvider>
+        <WorldProvider>
+          <Main />
+          <AuthGate />
+        </WorldProvider>
+      </SessionProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function Main() {
+  const { requireAuth } = useSession();
   const [tab, setTab] = useState<MainTab>('home');
   const [createOpen, setCreateOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -34,15 +50,14 @@ export default function App() {
 
   // le bouton « + » ouvre le menu de création au lieu de changer d'onglet
   const onTab = (t: MainTab) => {
-    if (t === 'create') return setCreateOpen(true);
+    if (t === 'create') return requireAuth('Connecte-toi pour lancer un live sur Zembo.', () => setCreateOpen(true));
     setVisited((v) => (v[t] ? v : { ...v, [t]: true }));
     setTab(t);
   };
   const page = (t: MainTab) => [StyleSheet.absoluteFill, { display: tab === t ? ('flex' as const) : ('none' as const) }];
 
   return (
-    <SafeAreaProvider>
-      <WorldProvider>
+    <>
       <StatusBar style="light" />
       <View style={styles.root}>
         <View style={styles.content}>
@@ -59,7 +74,7 @@ export default function App() {
           </View>
           {visited.profile && (
             <View style={page('profile')}>
-              <ProfileScreen onStartTable={() => setSetupOpen(true)} />
+              <ProfileScreen onStartTable={() => requireAuth('Connecte-toi pour lancer ta Zembo Table.', () => setSetupOpen(true))} />
             </View>
           )}
         </View>
@@ -95,8 +110,7 @@ export default function App() {
       />
       <SlamTherapie open={talk === 'slam'} onClose={() => setTalk(null)} />
       <MicroOuvert open={talk === 'open-mic'} onClose={() => setTalk(null)} />
-      </WorldProvider>
-    </SafeAreaProvider>
+    </>
   );
 }
 

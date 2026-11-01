@@ -160,7 +160,8 @@ export const EMPTY_PROFILE: WorldProfile = {
   intentions: [],
 };
 
-export const TAKEN_USERNAMES = ['deena_zembo', 'admin', 'zembo', 'worldroom', 'moussa', 'chloe'];
+// pseudos réservés (la disponibilité réelle est vérifiée dans la base)
+export const TAKEN_USERNAMES = ['admin', 'zembo', 'worldroom', 'support', 'moderation'];
 
 export function normalizeUsername(v: string) {
   return v
