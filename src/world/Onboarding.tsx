@@ -95,9 +95,11 @@ export function WorldIntro({ onBack, onStart }: { onBack: () => void; onStart: (
 // Les 7 étapes de création du profil World Room
 export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number; onExit: () => void; onDone: () => void }) {
   const { profile, setProfile, saveProfile, showToast } = useWorld();
-  const { user: account } = useSession();
+  const { user: account, profile: zembo } = useSession();
+  const zemboPseudo = normalizeUsername(zembo?.pseudo ?? '');
   const [step, setStep] = useState(start);
-  const [d, setD] = useState<WorldProfile>(profile);
+  // premier passage : on reprend le pseudo du compte Zembo (modifiable)
+  const [d, setD] = useState<WorldProfile>(() => (profile.username ? profile : { ...profile, username: zemboPseudo }));
   const [saving, setSaving] = useState(false);
   const [remote, setRemote] = useState<'checking' | 'free' | 'taken' | null>(null);
   const set = (patch: Partial<WorldProfile>) => setD((x) => ({ ...x, ...patch }));
@@ -153,6 +155,19 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
         {user === 'taken' && <Text style={styles.bad}>✗ Ce pseudo est déjà pris</Text>}
         {user === 'short' && <Text style={styles.hint}>Au moins 3 caractères.</Text>}
         {user === 'empty' && <Text style={styles.hint}>Ton identifiant public, visible sur ta World Card.</Text>}
+        {!!zemboPseudo && (
+          <View style={styles.zemboRow}>
+            {d.username === zemboPseudo ? (
+              <Text style={styles.zemboText}>C'est ton pseudo Zembo. Tu peux le garder ou en choisir un autre pour World Room.</Text>
+            ) : (
+              <Pressable onPress={() => set({ username: zemboPseudo })} hitSlop={6}>
+                <Text style={styles.zemboText}>
+                  Reprendre mon pseudo Zembo : <Text style={{ color: colors.gold, fontWeight: '900' }}>@{zemboPseudo}</Text>
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        )}
         <Text style={styles.note}>
           ✨ Ton nom, ta date de naissance et ton email restent dans ton compte Zembo. World Room ne te demande que tes infos de découverte.
         </Text>
@@ -544,6 +559,8 @@ const styles = StyleSheet.create({
   },
   at: { color: colors.gold, fontSize: 17, fontWeight: '800', marginRight: 4 },
   inputText: { color: colors.text, fontSize: 15.5, paddingVertical: 0 },
+  zemboRow: { marginTop: 12, padding: 12, borderRadius: 14, backgroundColor: 'rgba(212,175,55,0.08)', borderWidth: 1, borderColor: 'rgba(212,175,55,0.25)' },
+  zemboText: { color: colors.text, fontSize: 13, lineHeight: 18 },
   ok: { color: '#58D68D', fontSize: 12.5, fontWeight: '700', marginTop: 8 },
   bad: { color: '#F07167', fontSize: 12.5, fontWeight: '700', marginTop: 8 },
   hint: { color: colors.textFaint, fontSize: 12, marginTop: 6 },
