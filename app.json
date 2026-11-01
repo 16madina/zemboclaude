@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "zembo",
+    "name": "Zembo",
     "slug": "zembo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.zembo.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -16,10 +17,26 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.zembo.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-video",
+      "expo-image",
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Zembo a besoin de tes photos pour ton profil World Room."
+        }
+      ]
+    ],
+    "backgroundColor": "#0A0806",
+    "splash": {
+      "backgroundColor": "#0A0806"
     }
   }
 }
