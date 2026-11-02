@@ -366,6 +366,18 @@ function SlamLive({ onClose }: { onClose: () => void }) {
       {/* colonne d'actions */}
       <View style={[styles.actions, { bottom: insets.bottom + 76 }]}>
         <Action icon="arrow-redo" label="Partager" onPress={() => setSheet('share')} />
+        {/* demander à slamer directement, sans passer par la file */}
+        <Action
+          icon="mic"
+          accent
+          label={imOnStage ? 'Sur scène' : mine ? `#${myPos || 1} file` : requests.some((r) => r.me) ? 'En attente' : 'Slamer'}
+          onPress={() => {
+            if (imOnStage) showToast('Tu es sur scène 🎤');
+            else if (mine) setFlow('confirm');
+            else if (requests.some((r) => r.me)) showToast("Ta demande est en attente de l'hôte…");
+            else setFlow('request');
+          }}
+        />
         <Action icon="gift" label="Cadeau" color={colors.gold} onPress={() => setSheet('gift')} />
         <Pressable
           onPress={() => {
@@ -626,7 +638,19 @@ function TimerRing({ ratio, urgent, label, sub }: { ratio: number; urgent: boole
   );
 }
 
-function Action({ icon, label, onPress, color = colors.white }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; color?: string }) {
+function Action({
+  icon,
+  label,
+  onPress,
+  color = colors.white,
+  accent,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  color?: string;
+  accent?: boolean;
+}) {
   return (
     <Pressable
       onPress={() => {
@@ -635,8 +659,8 @@ function Action({ icon, label, onPress, color = colors.white }: { icon: keyof ty
       }}
       style={styles.actionItem}
     >
-      <View style={styles.actionBtn}>
-        <Ionicons name={icon} size={21} color={color} />
+      <View style={[styles.actionBtn, accent && styles.actionAccent]}>
+        <Ionicons name={icon} size={21} color={accent ? colors.white : color} />
       </View>
       <Text style={styles.actionLabel}>{label}</Text>
     </Pressable>
@@ -772,6 +796,7 @@ const styles = StyleSheet.create({
   actions: { position: 'absolute', right: 10, alignItems: 'center', gap: 12 },
   actionItem: { alignItems: 'center' },
   actionBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  actionAccent: { backgroundColor: MAGENTA, borderWidth: 2, borderColor: 'rgba(255,255,255,0.35)', shadowColor: MAGENTA, shadowOpacity: 0.7, shadowRadius: 10 },
   actionLabel: { color: colors.white, fontSize: 10.5, fontWeight: '800', marginTop: 3, textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
   zemsBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   zemsZ: { color: '#1D1405', fontSize: 20, fontWeight: '900' },
