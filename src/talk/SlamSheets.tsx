@@ -28,13 +28,14 @@ function BottomSheet({ visible, onClose, children, tall }: { visible: boolean; o
 }
 
 // ── Demander à slamer : titre, durée 1 ou 3 min, ambiance, mélodie ──
-export type SlamRequest = { title: string; duration: SlamDuration; mood: string; sound: Sound | null };
+export type SlamRequest = { title: string; duration: SlamDuration; mood: string; sound: Sound | null; lyrics?: string };
 
 export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean; onClose: () => void; onSubmit: (r: SlamRequest) => void }) {
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState<SlamDuration | null>(null);
   const [mood, setMood] = useState<string | null>(null);
   const [sound, setSound] = useState<Sound | null>(null);
+  const [lyrics, setLyrics] = useState('');
   const [preview, setPreview] = useState<{ id: string; elapsed: number; playing: boolean } | null>(null);
 
   // aperçu simulé (pas encore de vraies pistes audio)
@@ -49,6 +50,7 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
       return;
     }
     setTitle('');
+    setLyrics('');
     setDuration(null);
     setMood(null);
     setSound(null);
@@ -77,6 +79,22 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
           selectionColor={colors.gold}
         />
         <Text style={styles.counter}>{title.length}/48</Text>
+
+        <Text style={styles.label}>TON TEXTE (FACULTATIF)</Text>
+        <TextInput
+          value={lyrics}
+          onChangeText={(v) => setLyrics(v.slice(0, 1500))}
+          placeholder={'Colle ou écris ton texte ici, une ligne par vers…'}
+          placeholderTextColor={colors.textFaint}
+          multiline
+          style={[styles.input, styles.lyricsInput]}
+          selectionColor={colors.gold}
+        />
+        <Text style={styles.hint}>
+          {lyrics.trim()
+            ? `📝 ${lyrics.trim().split('\n').filter((l) => l.trim()).length} lignes · ton texte s'affichera en grand pendant ton passage, façon karaoké.`
+            : '🎙 Sans texte, tes paroles seront sous-titrées en direct à l’écran.'}
+        </Text>
 
         <Text style={styles.label}>DURÉE</Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -190,7 +208,7 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
           onPress={() => {
             tap();
             setPreview(null);
-            onSubmit({ title: title.trim(), duration: duration!, mood: mood!, sound });
+            onSubmit({ title: title.trim(), duration: duration!, mood: mood!, sound, lyrics: lyrics.trim() || undefined });
           }}
           style={{ marginTop: 18 }}
         >
@@ -572,6 +590,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(212,175,55,0.25)',
   },
+  lyricsInput: { height: 120, paddingTop: 12, textAlignVertical: 'top', fontSize: 14.5, lineHeight: 20 },
   counter: { color: colors.textFaint, fontSize: 11, textAlign: 'right', marginTop: 4 },
   durBtn: { flex: 1, paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   durOn: { backgroundColor: colors.gold, borderColor: colors.gold },

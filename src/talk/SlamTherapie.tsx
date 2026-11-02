@@ -19,6 +19,7 @@ import { Canvas, Path, Skia } from '@shopify/react-native-skia';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { AUTO, CHAT0, QUEUE0, REQUESTS0, SLAM_STAGE, STAGE0, TINTS, avatarOf, fmtDur, moodOf, type SlamMsg, type Slot } from './slamData';
+import { LyricsPanel } from './LyricsPanel';
 import { MAGENTA, QueueDrawer, RequestSheet, SlamActionSheet, tap, type SlamRequest, type SlamSheetKind } from './SlamSheets';
 
 // Slam Thérapie : la scène ouverte de slam en direct (reprise de zembolounge)
@@ -207,7 +208,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
   };
   const submitRequest = (r: SlamRequest) => {
     seq.current += 1;
-    const slot: Slot = { id: 900 + seq.current, name: 'Deena', title: r.title, mood: r.mood, sound: r.sound?.name ?? null, duration: r.duration, me: true };
+    const slot: Slot = { id: 900 + seq.current, name: 'Deena', title: r.title, mood: r.mood, sound: r.sound?.name ?? null, duration: r.duration, me: true, lyrics: r.lyrics };
     setRequests((q) => [slot, ...q]);
     setFlow(null);
     showToast("Demande envoyée à l'hôte…");
@@ -363,6 +364,13 @@ function SlamLive({ onClose }: { onClose: () => void }) {
         <Text style={styles.pipRole}>Hôte</Text>
       </View>
 
+      {/* Mode Paroles : le texte du slameur à l'écran, façon karaoké */}
+      {!thanks && !nextUp && (
+        <View style={[styles.lyrics, { top: T + 318 }]} pointerEvents="box-none">
+          <LyricsPanel lyrics={perf.lyrics} elapsed={total - left} total={total} running={running} slotKey={perf.id} />
+        </View>
+      )}
+
       {/* colonne d'actions */}
       <View style={[styles.actions, { bottom: insets.bottom + 76 }]}>
         <Action icon="arrow-redo" label="Partager" onPress={() => setSheet('share')} />
@@ -396,7 +404,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
       {/* chat + saisie */}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.bottom} pointerEvents="box-none">
         <View style={styles.chat} pointerEvents="none">
-          {msgs.slice(-7).map((m, i, arr) => (
+          {msgs.slice(-4).map((m, i, arr) => (
             <View key={m.id} style={[styles.msg, { opacity: Math.max(0.25, 1 - (arr.length - 1 - i) * 0.13) }]}>
               <Image source={avatarOf(m.user, 60)} style={[styles.msgAv, m.me && { borderColor: colors.gold, borderWidth: 1.5 }]} />
               <Text style={styles.msgText}>
@@ -739,6 +747,7 @@ function BottomCard({ onClose, children }: { onClose: () => void; children: Reac
 
 const styles = StyleSheet.create({
   shade: { position: 'absolute', left: 0, right: 0 },
+  lyrics: { position: 'absolute', left: 12, right: 84 },
   header: { position: 'absolute', left: 12, right: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
   zIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   zText: { color: '#1D1405', fontSize: 17, fontWeight: '900' },

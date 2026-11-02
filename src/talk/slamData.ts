@@ -46,18 +46,69 @@ export type Slot = {
   sound: string | null;
   duration: SlamDuration;
   me?: boolean;
+  /** texte préparé : affiché façon karaoké pendant le passage. Sans texte → sous-titres en direct */
+  lyrics?: string;
 };
 
+// Textes de démonstration (écrits pour Zembo, pas de droits d'auteur tiers)
+const DEENA_TEXT = `On m'a dit que j'étais trop
+Trop forte, trop douce, trop tout
+Alors j'ai appris à me faire petite
+À marcher sans faire de bruit
+Mais un matin j'ai ouvert la fenêtre
+Et le soleil ne m'a pas demandé la permission
+Il est entré, tout simplement
+Comme moi aujourd'hui sur cette scène
+Je me suis relevée
+Pas d'un coup, pas en héroïne
+Une marche après l'autre
+Avec mes doutes dans la poche
+Et ma voix au bout des doigts
+Ce soir je ne m'excuse plus d'exister
+Ce soir je prends toute la place
+Parce que la place, c'est moi`;
+
+const MOUSSA_TEXT = `Il y a des blessures qu'on ne voit pas
+Elles ne saignent pas sur les vêtements
+Elles dorment sous les sourires
+Elles se lèvent avant nous le matin
+J'ai porté les miennes comme un sac trop lourd
+Sans jamais dire à personne ce qu'il y avait dedans
+Aujourd'hui je l'ouvre devant vous
+Et je vous montre que ça va aller
+Parce que parler, c'est déjà guérir un peu`;
+
+const SARAH_TEXT = `J'ai attendu qu'on me choisisse
+Comme on attend un bus sous la pluie
+Puis j'ai compris que je pouvais marcher
+Aujourd'hui je me suis choisie
+Et la route est plus belle à pied`;
+
+const AISSATOU_TEXT = `Ma mère m'a appris à danser sous l'orage
+À rire quand le ciel gronde
+Ce soir je danse pour elle
+Et chaque mot est une renaissance`;
+
 export const QUEUE0: Slot[] = [
-  { id: 1, name: 'Moussa', title: 'Les blessures invisibles', mood: 'piano', sound: 'Renaissance', duration: 3 },
-  { id: 2, name: 'Sarah', title: 'Je me suis choisie', mood: 'guitare', sound: 'Racines', duration: 1 },
+  { id: 1, name: 'Moussa', title: 'Les blessures invisibles', mood: 'piano', sound: 'Renaissance', duration: 3, lyrics: MOUSSA_TEXT },
+  { id: 2, name: 'Sarah', title: 'Je me suis choisie', mood: 'guitare', sound: 'Racines', duration: 1, lyrics: SARAH_TEXT },
   { id: 3, name: 'Kevin', title: 'Père absent', mood: 'emotion', sound: 'Silence plein', duration: 3 },
 ];
 export const REQUESTS0: Slot[] = [
-  { id: 51, name: 'Aïssatou', title: 'Ma renaissance', mood: 'afro', sound: 'Mama', duration: 1 },
+  { id: 51, name: 'Aïssatou', title: 'Ma renaissance', mood: 'afro', sound: 'Mama', duration: 1, lyrics: AISSATOU_TEXT },
   { id: 52, name: 'Lina', title: "Ce que je n'ai jamais dit", mood: 'melancolique', sound: 'Absence', duration: 3 },
 ];
-export const STAGE0: Slot = { id: 0, name: 'Deena', title: 'Je me suis relevée', mood: 'piano', sound: 'Renaissance', duration: 3 };
+export const STAGE0: Slot = { id: 0, name: 'Deena', title: 'Je me suis relevée', mood: 'piano', sound: 'Renaissance', duration: 3, lyrics: DEENA_TEXT };
+
+// Démo des sous-titres en direct (passage sans texte préparé)
+export const LIVE_CAPTIONS = [
+  "Mon père n'était pas là le jour de mes premiers pas",
+  "Ni le jour de mon diplôme, ni le jour où j'ai eu besoin de lui",
+  "Pendant longtemps j'ai cru que c'était de ma faute",
+  "Aujourd'hui je sais que l'absence ne dit rien de moi",
+  "Je serai le père que je n'ai pas eu",
+  "Présent, même quand c'est difficile",
+];
 
 export type SlamMsg = { id: number; user: string; text: string; tint: string; me?: boolean };
 export const TINTS = ['#E9C46A', '#C9A0F0', '#7FD8A8', '#8DB8F2', '#F28DB2'];
