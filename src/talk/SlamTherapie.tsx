@@ -18,7 +18,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Canvas, Path, Skia } from '@shopify/react-native-skia';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
-import { formatCount } from '../utils/format';
 import { AUTO, CHAT0, QUEUE0, REQUESTS0, SLAM_STAGE, STAGE0, TINTS, avatarOf, fmtDur, moodOf, type SlamMsg, type Slot } from './slamData';
 import { MAGENTA, QueueDrawer, RequestSheet, SlamActionSheet, tap, type SlamRequest, type SlamSheetKind } from './SlamSheets';
 
@@ -67,7 +66,6 @@ function SlamLive({ onClose }: { onClose: () => void }) {
   // ── live ──
   const [msgs, setMsgs] = useState<SlamMsg[]>(CHAT0);
   const [draft, setDraft] = useState('');
-  const [likes, setLikes] = useState(4200);
   const [hearts, setHearts] = useState<Heart[]>([]);
   const [drawer, setDrawer] = useState(false);
   const [sheet, setSheet] = useState<SlamSheetKind>(null);
@@ -232,7 +230,6 @@ function SlamLive({ onClose }: { onClose: () => void }) {
 
   // toucher la scène = j'aime (cœurs qui s'envolent)
   const likeAt = (x: number, y: number) => {
-    setLikes((l) => l + 1);
     const h: Heart = { id: Date.now() + Math.random(), x, y, v: new Animated.Value(0) };
     setHearts((hs) => [...hs.slice(-12), h]);
     Animated.timing(h.v, { toValue: 1, duration: 1100, easing: Easing.out(Easing.quad), useNativeDriver: true }).start(() =>
@@ -319,10 +316,6 @@ function SlamLive({ onClose }: { onClose: () => void }) {
             </View>
           )}
         </Pressable>
-        <View style={styles.pill}>
-          <Text style={{ fontSize: 11 }}>❤️</Text>
-          <Text style={styles.pillText}>{formatCount(likes)}</Text>
-        </View>
       </View>
 
       {/* sur scène + chrono */}
@@ -372,7 +365,6 @@ function SlamLive({ onClose }: { onClose: () => void }) {
 
       {/* colonne d'actions */}
       <View style={[styles.actions, { bottom: insets.bottom + 76 }]}>
-        <Action icon="heart" label={formatCount(likes)} color="#FF4D6D" onPress={() => likeAt(260, 420)} />
         <Action icon="arrow-redo" label="Partager" onPress={() => setSheet('share')} />
         <Action icon="gift" label="Cadeau" color={colors.gold} onPress={() => setSheet('gift')} />
         <Pressable

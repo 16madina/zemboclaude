@@ -5,7 +5,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
-import { formatCount } from '../utils/format';
 import {
   ChatInput,
   GiftGrid,
@@ -97,7 +96,6 @@ function MicroLive({ onClose }: { onClose: () => void }) {
   const [riseAsked, setRiseAsked] = useState(false);
   const [seconds, setSeconds] = useState(4356);
   const [viewers, setViewers] = useState(325);
-  const [likes, setLikes] = useState(1800);
   const [follow, setFollow] = useState(false);
   const [sheet, setSheet] = useState<'requests' | 'invite' | 'react' | 'gifts' | 'more' | 'places' | 'rise' | null>(null);
 
@@ -114,10 +112,6 @@ function MicroLive({ onClose }: { onClose: () => void }) {
   }, []);
 
   const close = () => setSheet(null);
-  const like = () => {
-    setLikes((l) => l + 1);
-    fly.add('❤️');
-  };
   const toggleMyHand = () => {
     const next = !myHand;
     setMyHand(next);
@@ -201,7 +195,6 @@ function MicroLive({ onClose }: { onClose: () => void }) {
           style={StyleSheet.absoluteFill}
           onPress={(e) => {
             tap();
-            setLikes((l) => l + 1);
             fly.add('❤️', e.nativeEvent.locationX, e.nativeEvent.locationY + T + 88);
           }}
         />
@@ -320,7 +313,6 @@ function MicroLive({ onClose }: { onClose: () => void }) {
 
       {/* colonne droite */}
       <View style={[styles.actions, { top: T + 96 }]}>
-        <SideAction icon="heart" label={formatCount(likes)} color="#FF4D6D" onPress={like} />
         <SideAction icon="arrow-redo" label="Partager" onPress={() => setSheet('invite')} />
         <SideAction icon="Z" label="Zems" gold onPress={() => setSheet('gifts')} />
       </View>
