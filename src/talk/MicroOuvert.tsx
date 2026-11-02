@@ -314,25 +314,22 @@ function MicroLive({ onClose }: { onClose: () => void }) {
       {/* colonne droite */}
       <View style={[styles.actions, { top: T + 96 }]}>
         <SideAction icon="arrow-redo" label="Partager" onPress={() => setSheet('invite')} />
+        {/* demander à monter / à parler directement, sans passer par le menu */}
+        {role === 'viewer' && (
+          <SideAction
+            icon="hand-right"
+            accent={riseAsked ? '#5A5146' : '#2EC4A6'}
+            label={riseAsked ? 'En attente' : 'Monter'}
+            onPress={() => (riseAsked ? toast.show("Ta demande est en attente de l'hôte…") : askRise())}
+          />
+        )}
+        {role === 'guest' && <SideAction icon="hand-right" accent={myHand ? colors.gold : '#2EC4A6'} label={myHand ? 'Main levée' : 'Parler'} onPress={toggleMyHand} />}
         <SideAction icon="Z" label="Zems" gold onPress={() => setSheet('gifts')} />
       </View>
 
       {/* chat + saisie + barre du bas */}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.bottom} pointerEvents="box-none">
-        <LiveChat msgs={chat.msgs} max={role === 'viewer' ? 5 : 5} />
-        {role === 'viewer' && (
-          <Pressable onPress={() => !riseAsked && (tap(), askRise())} style={{ marginHorizontal: 12, marginBottom: 8 }}>
-            {riseAsked ? (
-              <View style={[styles.riseBtn, { borderWidth: 1, borderColor: 'rgba(212,175,55,0.5)', backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-                <Text style={[styles.riseText, { color: colors.gold }]}>Demande envoyée ⏳ En attente de l'hôte</Text>
-              </View>
-            ) : (
-              <LinearGradient colors={goldGradient} style={styles.riseBtn}>
-                <Text style={styles.riseText}>✋ Demander à monter</Text>
-              </LinearGradient>
-            )}
-          </Pressable>
-        )}
+        <LiveChat msgs={chat.msgs} max={5} />
         <ChatInput ref={input} onSend={(t) => chat.push('Deena', t, true)} />
         {role !== 'viewer' && (
           <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom - 18, 6) }]}>
@@ -606,8 +603,6 @@ const styles = StyleSheet.create({
   wave: { position: 'absolute', right: 5, bottom: 22 },
   actions: { position: 'absolute', right: 10, alignItems: 'center', gap: 6 },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  riseBtn: { height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  riseText: { color: '#1D1405', fontSize: 13, fontWeight: '900' },
   bar: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 4, paddingTop: 8, marginTop: -4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(212,175,55,0.3)', backgroundColor: 'rgba(8,5,12,0.92)' },
   barItem: { flex: 1, alignItems: 'center', gap: 2 },
   barLabel: { color: colors.textDim, fontSize: 9, fontWeight: '700' },

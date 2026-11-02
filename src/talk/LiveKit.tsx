@@ -332,7 +332,22 @@ export function ShareRow({ onPick }: { onPick: (label: string) => void }) {
 }
 
 // Bouton rond de la colonne de droite
-export function SideAction({ icon, label, onPress, color = colors.white, gold }: { icon: keyof typeof Ionicons.glyphMap | 'Z'; label: string; onPress: () => void; color?: string; gold?: boolean }) {
+export function SideAction({
+  icon,
+  label,
+  onPress,
+  color = colors.white,
+  gold,
+  accent,
+}: {
+  icon: keyof typeof Ionicons.glyphMap | 'Z';
+  label: string;
+  onPress: () => void;
+  color?: string;
+  gold?: boolean;
+  /** couleur de fond pleine pour un bouton à mettre en avant */
+  accent?: string;
+}) {
   return (
     <Pressable
       onPress={() => {
@@ -346,8 +361,15 @@ export function SideAction({ icon, label, onPress, color = colors.white, gold }:
           {icon === 'Z' ? <Text style={styles.zemsZ}>Z</Text> : <Ionicons name={icon} size={21} color="#1D1405" />}
         </LinearGradient>
       ) : (
-        <View style={[styles.sideBtn, { backgroundColor: 'rgba(0,0,0,0.45)' }]}>
-          {icon === 'Z' ? <Text style={styles.zemsZ}>Z</Text> : <Ionicons name={icon} size={21} color={color} />}
+        <View
+          style={[
+            styles.sideBtn,
+            accent
+              ? { backgroundColor: accent, borderWidth: 2, borderColor: 'rgba(255,255,255,0.35)', shadowColor: accent, shadowOpacity: 0.7, shadowRadius: 10 }
+              : { backgroundColor: 'rgba(0,0,0,0.45)' },
+          ]}
+        >
+          {icon === 'Z' ? <Text style={styles.zemsZ}>Z</Text> : <Ionicons name={icon} size={21} color={accent ? colors.white : color} />}
         </View>
       )}
       <Text style={styles.sideLabel}>{label}</Text>
