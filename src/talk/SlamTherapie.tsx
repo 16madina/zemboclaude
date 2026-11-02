@@ -373,7 +373,6 @@ function SlamLive({ onClose }: { onClose: () => void }) {
       {/* colonne d'actions */}
       <View style={[styles.actions, { bottom: insets.bottom + 76 }]}>
         <Action icon="heart" label={formatCount(likes)} color="#FF4D6D" onPress={() => likeAt(260, 420)} />
-        <Action icon="chatbubble-ellipses" label="286" onPress={() => input.current?.focus()} />
         <Action icon="arrow-redo" label="Partager" onPress={() => setSheet('share')} />
         <Action icon="gift" label="Cadeau" color={colors.gold} onPress={() => setSheet('gift')} />
         <Pressable

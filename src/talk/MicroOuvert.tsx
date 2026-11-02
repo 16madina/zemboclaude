@@ -321,7 +321,6 @@ function MicroLive({ onClose }: { onClose: () => void }) {
       {/* colonne droite */}
       <View style={[styles.actions, { top: T + 96 }]}>
         <SideAction icon="heart" label={formatCount(likes)} color="#FF4D6D" onPress={like} />
-        <SideAction icon="chatbubble-ellipses" label="246" onPress={() => input.current?.focus()} />
         <SideAction icon="arrow-redo" label="Partager" onPress={() => setSheet('invite')} />
         <SideAction icon="Z" label="Zems" gold onPress={() => setSheet('gifts')} />
       </View>
