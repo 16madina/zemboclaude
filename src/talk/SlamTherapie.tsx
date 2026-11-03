@@ -20,6 +20,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { AUTO, CHAT0, QUEUE0, REQUESTS0, SLAM_STAGE, STAGE0, TINTS, avatarOf, fmtDur, moodOf, type SlamMsg, type Slot } from './slamData';
 import { LyricsPanel } from './LyricsPanel';
+import { melodyFile } from './melodies';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { MAGENTA, QueueDrawer, RequestSheet, SlamActionSheet, tap, type SlamRequest, type SlamSheetKind } from './SlamSheets';
 
 // Mic d'Or Thérapie (ex-Slam Thérapie) : la scène ouverte en direct (reprise de zembolounge)
@@ -242,6 +244,31 @@ function SlamLive({ onClose }: { onClose: () => void }) {
     likeAt(e.nativeEvent.locationX, e.nativeEvent.locationY);
   };
 
+  // mélodie du passage en cours (jouée en boucle pendant que la personne est au mic)
+  const stageFile = melodyFile(perf.sound, perf.duration);
+  const [musicOn, setMusicOn] = useState(true);
+  const stage = useAudioPlayer(null);
+  const stageFileRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    // pas de musique pendant le « merci », le décompte ou quand on écoute un aperçu
+    const shouldPlay = !!stageFile && musicOn && running && !thanks && !nextUp && flow !== 'request';
+    try {
+      if (stageFileRef.current !== stageFile) {
+        stageFileRef.current = stageFile;
+        if (stageFile) {
+          stage.replace(stageFile);
+          stage.loop = true;
+          stage.volume = 0.55;
+        }
+      }
+      if (shouldPlay) stage.play();
+      else stage.pause();
+    } catch {}
+  }, [stage, stageFile, musicOn, running, thanks, nextUp, flow]);
+
   const total = perf.duration * 60;
   const ratio = left / total;
   const urgent = left <= 10;
@@ -334,7 +361,10 @@ function SlamLive({ onClose }: { onClose: () => void }) {
           <Pressable
             onPress={() => {
               tap();
-              showToast(perf.sound ? `🎵 ${perf.sound} (${moodOf(perf.mood).label}) — lecture simulée` : 'Sans musique — a cappella');
+              if (!perf.sound) return showToast('Sans musique — a cappella');
+              if (!stageFile) return showToast(`🎵 ${perf.sound} — morceau bientôt disponible`);
+              setMusicOn((m) => !m);
+              showToast(musicOn ? 'Musique coupée pour toi 🔇' : `🎵 ${perf.sound}`);
             }}
             style={styles.music}
           >
@@ -343,7 +373,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
               <Text style={styles.musicText} numberOfLines={1}>
                 {perf.sound ?? 'Sans musique'}
               </Text>
-              <Ionicons name={running ? 'play' : 'pause'} size={10} color={colors.text} />
+              <Ionicons name={!stageFile ? 'time-outline' : musicOn ? 'volume-high' : 'volume-mute'} size={11} color={colors.text} />
             </View>
             {perf.sound && (
               <View style={styles.musicBar}>

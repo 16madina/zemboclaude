@@ -32,7 +32,8 @@
         {
           "photosPermission": "Zembo a besoin de tes photos pour ton profil World Room."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "backgroundColor": "#0A0806",
     "splash": {

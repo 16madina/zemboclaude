@@ -1,6 +1,7 @@
 // Mic d'Or Thérapie (ex-Slam Thérapie) : données reprises de zembolounge (talk-show.slam-therapie.tsx, lib/zembo-sounds.ts)
 
 import { DEENA_PHOTO } from '../table/data';
+import { MELODIES } from './melodies';
 
 export const SLAM_STAGE = require('../../assets/talk/slam-stage.jpg');
 
@@ -18,22 +19,18 @@ export const MOODS: Mood[] = [
   { id: 'aucune', label: 'Sans musique', emoji: '🔇' },
 ];
 
-// « Zembo Sounds » : mélodies de remplacement (les vraies pistes arriveront plus tard)
-const NAMES: Record<string, string[]> = {
-  piano: ['Renaissance', 'Cicatrices', 'Nouveau départ'],
-  guitare: ['Je me relève', 'Racines', 'Douce lumière'],
-  lofi: ['Nuit calme', 'Respire', 'Chambre 4'],
-  emotion: ['Larmes sèches', 'Silence plein', "Ce que j'ai tu"],
-  melancolique: ['Pluie de mars', 'Absence', 'Vieux carnet'],
-  motivante: ['Debout', 'Plus fort', 'Ma revanche'],
-  afro: ['Sankofa', 'Terre chaude', 'Mama'],
-};
-
-export type Sound = { id: string; name: string; mood: string; duration: SlamDuration };
+// « Zembo Sounds » : le catalogue des mélodies est dans melodies.ts
+export type Sound = { id: string; name: string; mood: string; duration: SlamDuration; file?: number };
 
 export const soundsFor = (mood: string | null, duration: SlamDuration | null): Sound[] => {
   if (!mood || mood === 'aucune' || !duration) return [];
-  return (NAMES[mood] ?? []).map((name) => ({ id: `${mood}-${name}-${duration}`, name, mood, duration }));
+  return MELODIES.filter((m) => m.mood === mood && m.duration === duration).map((m) => ({
+    id: `${m.mood}-${m.name}-${m.duration}`,
+    name: m.name,
+    mood: m.mood,
+    duration: m.duration,
+    file: m.file,
+  }));
 };
 export const moodOf = (id: string): Mood => MOODS.find((m) => m.id === id) ?? MOODS[0];
 export const fmtDur = (d: SlamDuration) => (d === 1 ? '01:00' : '03:00');

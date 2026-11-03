@@ -4,9 +4,12 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { MOODS, SLAM_GIFTS, ZEM_AMOUNTS, avatarOf, fmtDur, moodOf, soundsFor, type SlamDuration, type Slot, type Sound } from './slamData';
+
+const mmss = (s: number) => `${String(Math.floor((s || 0) / 60)).padStart(2, '0')}:${String(Math.floor((s || 0) % 60)).padStart(2, '0')}`;
 
 export const tap = () => void Haptics.selectionAsync().catch(() => {});
 const MAGENTA = '#E0457B';
@@ -36,17 +39,39 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
   const [mood, setMood] = useState<string | null>(null);
   const [sound, setSound] = useState<Sound | null>(null);
   const [lyrics, setLyrics] = useState('');
-  const [preview, setPreview] = useState<{ id: string; elapsed: number; playing: boolean } | null>(null);
-
-  // aperçu simulé (pas encore de vraies pistes audio)
+  // vraie écoute des mélodies (Zembo Sounds)
+  const player = useAudioPlayer(null);
+  const status = useAudioPlayerStatus(player);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [soon, setSoon] = useState<string | null>(null);
+  const stopPreview = () => {
+    try {
+      player.pause();
+    } catch {}
+    setPreviewId(null);
+  };
+  const togglePreview = (s: Sound) => {
+    if (!s.file) {
+      setSoon(s.id);
+      setTimeout(() => setSoon((x) => (x === s.id ? null : x)), 1600);
+      return;
+    }
+    if (previewId === s.id) {
+      if (status.playing) player.pause();
+      else player.play();
+      return;
+    }
+    player.replace(s.file);
+    player.seekTo(0);
+    player.play();
+    setPreviewId(s.id);
+  };
   useEffect(() => {
-    if (!preview?.playing) return;
-    const t = setInterval(() => setPreview((p) => (p ? { ...p, elapsed: p.elapsed + 1 } : p)), 1000);
-    return () => clearInterval(t);
-  }, [preview?.playing]);
+    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+  }, []);
   useEffect(() => {
     if (!visible) {
-      setPreview(null);
+      stopPreview();
       return;
     }
     setTitle('');
@@ -107,7 +132,7 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
                   tap();
                   setDuration(d);
                   setSound(null);
-                  setPreview(null);
+                  stopPreview();
                 }}
                 style={[styles.durBtn, on && styles.durOn]}
               >
@@ -129,7 +154,7 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
                   tap();
                   setMood(m.id);
                   setSound(null);
-                  setPreview(null);
+                  stopPreview();
                 }}
                 style={[styles.chip, on && styles.chipOn]}
               >
@@ -150,8 +175,9 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
             <View style={{ gap: 8 }}>
               {tracks.map((s) => {
                 const on = sound?.id === s.id;
-                const cur = preview?.id === s.id;
-                const total = s.duration * 60;
+                const cur = previewId === s.id;
+                const playing = cur && status.playing;
+                const len = status.duration || 1;
                 return (
                   <View key={s.id} style={[styles.track, on && styles.trackOn]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -175,23 +201,23 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
                       <Pressable
                         onPress={() => {
                           tap();
-                          setPreview((p) => (p?.id === s.id ? { ...p, playing: !p.playing } : { id: s.id, elapsed: 0, playing: true }));
+                          togglePreview(s);
                         }}
-                        style={[styles.previewBtn, cur && { backgroundColor: colors.gold }]}
+                        style={[styles.previewBtn, cur && { backgroundColor: colors.gold }, !s.file && { opacity: 0.55 }]}
                       >
-                        <Ionicons name={cur && preview?.playing ? 'pause' : 'play'} size={12} color={cur ? '#1D1405' : colors.text} />
+                        <Ionicons name={!s.file ? 'time-outline' : playing ? 'pause' : 'play'} size={12} color={cur ? '#1D1405' : colors.text} />
                         <Text style={[styles.previewText, cur && { color: '#1D1405' }]}>
-                          {cur && preview?.playing ? 'lecture…' : cur ? 'reprendre' : 'Aperçu'}
+                          {soon === s.id ? 'Bientôt' : !s.file ? 'Bientôt' : playing ? 'lecture…' : cur ? 'reprendre' : 'Aperçu'}
                         </Text>
                       </Pressable>
                     </View>
-                    {cur && preview && (
+                    {cur && (
                       <View style={{ marginTop: 8 }}>
                         <View style={styles.bar}>
-                          <View style={[styles.barFill, { width: `${Math.min(1, preview.elapsed / total) * 100}%` }]} />
+                          <View style={[styles.barFill, { width: `${Math.min(1, status.currentTime / len) * 100}%` }]} />
                         </View>
                         <Text style={styles.trackSub}>
-                          00:{String(preview.elapsed % 60).padStart(2, '0')} / {fmtDur(s.duration)}
+                          🎧 {mmss(status.currentTime)} / {mmss(status.duration)} · aperçu
                         </Text>
                       </View>
                     )}
@@ -207,7 +233,7 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
           disabled={!ready}
           onPress={() => {
             tap();
-            setPreview(null);
+            stopPreview();
             onSubmit({ title: title.trim(), duration: duration!, mood: mood!, sound, lyrics: lyrics.trim() || undefined });
           }}
           style={{ marginTop: 18 }}
