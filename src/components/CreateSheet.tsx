@@ -9,7 +9,7 @@ export type LoungeKind = 'talk' | 'table' | 'world';
 
 const OPTIONS: { id: LoungeKind; title: string; desc: string; icon: keyof typeof Ionicons.glyphMap; ready?: boolean }[] = [
   { id: 'table', title: 'Zembo Table', desc: "Un live autour d'une table de 2 à 8 personnes.", icon: 'people-circle', ready: true },
-  { id: 'talk', title: 'Talk Show', desc: 'Slam Thérapie ou Micro Ouvert.', icon: 'mic', ready: true },
+  { id: 'talk', title: 'Talk Show', desc: "Mic d'Or Thérapie ou Micro Ouvert.", icon: 'mic', ready: true },
   { id: 'world', title: 'World Room', desc: 'Rencontre des gens du monde entier. Le monde est à un Hello.', icon: 'earth', ready: true },
 ];
 

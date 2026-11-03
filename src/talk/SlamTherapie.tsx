@@ -22,7 +22,7 @@ import { AUTO, CHAT0, QUEUE0, REQUESTS0, SLAM_STAGE, STAGE0, TINTS, avatarOf, fm
 import { LyricsPanel } from './LyricsPanel';
 import { MAGENTA, QueueDrawer, RequestSheet, SlamActionSheet, tap, type SlamRequest, type SlamSheetKind } from './SlamSheets';
 
-// Slam Thérapie : la scène ouverte de slam en direct (reprise de zembolounge)
+// Mic d'Or Thérapie (ex-Slam Thérapie) : la scène ouverte en direct (reprise de zembolounge)
 export function SlamTherapie({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { height } = useWindowDimensions();
   const y = useRef(new Animated.Value(height)).current;
@@ -282,7 +282,9 @@ function SlamLive({ onClose }: { onClose: () => void }) {
           <Text style={styles.zText}>Z</Text>
         </LinearGradient>
         <View style={{ flex: 1 }}>
-          <Text style={styles.brand}>Slam Thérapie</Text>
+          <Text style={styles.brand} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+            Mic d'Or Thérapie
+          </Text>
           <Text style={styles.tagline}>DES MOTS POUR GUÉRIR</Text>
         </View>
         <View style={styles.liveBadge}>
@@ -364,7 +366,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
         <Text style={styles.pipRole}>Hôte</Text>
       </View>
 
-      {/* Mode Paroles : le texte du slameur à l'écran, façon karaoké */}
+      {/* Mode Paroles : le texte de la personne au mic, à l'écran, façon karaoké */}
       {!thanks && !nextUp && (
         <View style={[styles.lyrics, { top: T + 318 }]} pointerEvents="box-none">
           <LyricsPanel lyrics={perf.lyrics} elapsed={total - left} total={total} running={running} slotKey={perf.id} />
@@ -374,11 +376,11 @@ function SlamLive({ onClose }: { onClose: () => void }) {
       {/* colonne d'actions */}
       <View style={[styles.actions, { bottom: insets.bottom + 76 }]}>
         <Action icon="arrow-redo" label="Partager" onPress={() => setSheet('share')} />
-        {/* demander à slamer directement, sans passer par la file */}
+        {/* demander le mic directement, sans passer par la file */}
         <Action
           icon="mic"
           accent
-          label={imOnStage ? 'Sur scène' : mine ? `#${myPos || 1} file` : requests.some((r) => r.me) ? 'En attente' : 'Slamer'}
+          label={imOnStage ? 'Sur scène' : mine ? `#${myPos || 1} file` : requests.some((r) => r.me) ? 'En attente' : 'Le mic'}
           onPress={() => {
             if (imOnStage) showToast('Tu es sur scène 🎤');
             else if (mine) setFlow('confirm');

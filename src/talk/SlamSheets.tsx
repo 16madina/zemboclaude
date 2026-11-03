@@ -11,7 +11,7 @@ import { MOODS, SLAM_GIFTS, ZEM_AMOUNTS, avatarOf, fmtDur, moodOf, soundsFor, ty
 export const tap = () => void Haptics.selectionAsync().catch(() => {});
 const MAGENTA = '#E0457B';
 
-// Feuille qui monte du bas, propre au Slam
+// Feuille qui monte du bas, propre à Mic d'Or Thérapie
 function BottomSheet({ visible, onClose, children, tall }: { visible: boolean; onClose: () => void; children: React.ReactNode; tall?: boolean }) {
   const insets = useSafeAreaInsets();
   return (
@@ -27,7 +27,7 @@ function BottomSheet({ visible, onClose, children, tall }: { visible: boolean; o
   );
 }
 
-// ── Demander à slamer : titre, durée 1 ou 3 min, ambiance, mélodie ──
+// ── Demander le mic : titre, durée 1 ou 3 min, ambiance, mélodie ──
 export type SlamRequest = { title: string; duration: SlamDuration; mood: string; sound: Sound | null; lyrics?: string };
 
 export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean; onClose: () => void; onSubmit: (r: SlamRequest) => void }) {
@@ -63,13 +63,13 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
   return (
     <BottomSheet visible={visible} onClose={onClose} tall>
       <View style={styles.headRow}>
-        <Text style={styles.sheetTitle}>Demander à slamer</Text>
+        <Text style={styles.sheetTitle}>Demander le mic</Text>
         <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn}>
           <Ionicons name="close" size={16} color={colors.text} />
         </Pressable>
       </View>
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <Text style={styles.label}>TITRE DE TON SLAM</Text>
+        <Text style={styles.label}>TITRE DE TON PASSAGE</Text>
         <TextInput
           value={title}
           onChangeText={(v) => setTitle(v.slice(0, 48))}
@@ -201,7 +201,7 @@ export function RequestSheet({ visible, onClose, onSubmit }: { visible: boolean;
             </View>
           </>
         )}
-        {noMusic && <Text style={[styles.hint, { marginTop: 10 }]}>Tu slameras a cappella — aucune mélodie ne sera lancée.</Text>}
+        {noMusic && <Text style={[styles.hint, { marginTop: 10 }]}>Tu passeras a cappella — aucune mélodie ne sera lancée.</Text>}
 
         <Pressable
           disabled={!ready}
@@ -292,7 +292,7 @@ export function QueueDrawer({
       <Animated.View style={[styles.drawer, { width: panelW, paddingTop: insets.top + 8, transform: [{ translateX: x }] }]}>
         <View style={styles.headRow}>
           <Ionicons name="mic" size={16} color={colors.gold} />
-          <Text style={[styles.sheetTitle, { flex: 1, fontSize: 15 }]}>Slam Thérapie — Scène ouverte</Text>
+          <Text style={[styles.sheetTitle, { flex: 1, fontSize: 15 }]}>Mic d'Or Thérapie — Scène ouverte</Text>
           <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn}>
             <Ionicons name="close" size={16} color={colors.text} />
           </Pressable>
@@ -407,7 +407,7 @@ export function QueueDrawer({
           </Pressable>
 
           <View style={styles.cta2}>
-            <Text style={styles.cta2Title}>Envie de slamer ?</Text>
+            <Text style={styles.cta2Title}>Envie de prendre le mic ?</Text>
             <Text style={styles.sub}>Partage ton texte avec la communauté.</Text>
             {mine ? (
               <>
@@ -425,7 +425,7 @@ export function QueueDrawer({
               <Pressable onPress={onRequest} style={{ marginTop: 10 }}>
                 <LinearGradient colors={goldGradient} style={styles.cta}>
                   <Ionicons name="mic" size={15} color="#1D1405" />
-                  <Text style={styles.ctaText}>Demander à slamer</Text>
+                  <Text style={styles.ctaText}>Demander le mic</Text>
                 </LinearGradient>
               </Pressable>
             )}

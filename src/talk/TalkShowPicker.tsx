@@ -11,10 +11,10 @@ export type TalkFormat = 'open-mic' | 'slam';
 const FORMATS: { id: TalkFormat; title: string; accent: string; accroche: string; desc: string; icon: keyof typeof Ionicons.glyphMap; ready?: boolean }[] = [
   {
     id: 'slam',
-    title: 'Slam Thérapie',
+    title: "Mic d'Or Thérapie",
     accent: '#E0457B',
     accroche: 'Tes mots. Ta voix. Ta scène.',
-    desc: 'Déclame ton slam, ta poésie ou ton texte et fais vibrer la communauté.',
+    desc: 'Prends le mic sur une mélodie Zembo : ton texte, ta poésie, ta voix. Fais vibrer la communauté.',
     icon: 'mic',
     ready: true,
   },

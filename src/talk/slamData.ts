@@ -1,4 +1,4 @@
-// Slam Thérapie : données reprises de zembolounge (talk-show.slam-therapie.tsx, lib/zembo-sounds.ts)
+// Mic d'Or Thérapie (ex-Slam Thérapie) : données reprises de zembolounge (talk-show.slam-therapie.tsx, lib/zembo-sounds.ts)
 
 import { DEENA_PHOTO } from '../table/data';
 
