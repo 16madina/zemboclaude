@@ -46,6 +46,9 @@ export function SlamTherapie({ open, onClose }: { open: boolean; onClose: () => 
   );
 }
 
+// décompte avant chaque passage : à 0, chrono + mélodie + micro + paroles démarrent ensemble
+const COUNTDOWN = 10;
+
 type Heart = { id: number; x: number; y: number; v: Animated.Value };
 
 function SlamLive({ onClose }: { onClose: () => void }) {
@@ -125,7 +128,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
       if (q.length) {
         setQueue(q.slice(1));
         setNextUp(q[0]);
-        setCount(3);
+        setCount(COUNTDOWN);
       } else {
         setPerf(STAGE0);
         setLeft(STAGE0.duration * 60);
@@ -161,7 +164,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
       }, 700);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => setCount((c) => (c === null ? null : c - 1)), 900);
+    const t = setTimeout(() => setCount((c) => (c === null ? null : c - 1)), 1000);
     return () => clearTimeout(t);
   }, [count, nextUp]);
 
@@ -181,7 +184,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
     setRunning(false);
     setQueue((q) => q.filter((x) => x.id !== s.id));
     setNextUp(s);
-    setCount(3);
+    setCount(COUNTDOWN);
   };
   const accept = (s: Slot) => {
     tap();
@@ -501,7 +504,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
 
       {/* prochain sur scène + décompte */}
       {nextUp && count !== null && (
-        <FadeIn style={[styles.centerOverlay, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+        <FadeIn style={[styles.centerOverlay, { backgroundColor: 'rgba(0,0,0,0.82)' }]}>
           <Text style={styles.nextLabel}>PROCHAIN SUR SCÈNE</Text>
           <Text style={styles.nextName}>{nextUp.name.toUpperCase()}</Text>
           <Text style={styles.nextTitle}>{nextUp.title}</Text>
@@ -510,7 +513,14 @@ function SlamLive({ onClose }: { onClose: () => void }) {
             {nextUp.duration} min
           </Text>
           <CountNumber key={count} value={count === 0 ? '🎤' : String(count)} />
-          {count === 0 && <Text style={styles.nextMeta}>Chrono et musique lancés ✓</Text>}
+          {count > 0 ? (
+            <View style={styles.countTips}>
+              <Text style={styles.countTip}>🎧 Mets tes écouteurs : le micro n'entendra que ta voix</Text>
+              <Text style={styles.countTip}>📝 À zéro, tes paroles s'écrivent à l'écran</Text>
+            </View>
+          ) : (
+            <Text style={styles.nextMeta}>Chrono · mélodie · micro · paroles lancés ✓</Text>
+          )}
         </FadeIn>
       )}
 
@@ -879,6 +889,8 @@ const styles = StyleSheet.create({
   nextName: { color: colors.white, fontSize: 38, fontWeight: '900', marginTop: 6 },
   nextTitle: { color: colors.text, fontSize: 16, fontStyle: 'italic', marginTop: 2, textAlign: 'center' },
   nextMeta: { color: colors.textDim, fontSize: 13, marginTop: 6 },
+  countTips: { marginTop: 14, gap: 8, alignItems: 'center', maxWidth: 290 },
+  countTip: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600', textAlign: 'center' },
   count: { color: colors.goldLight, fontSize: 96, fontWeight: '900', marginTop: 10, textShadowColor: 'rgba(212,175,55,0.7)', textShadowRadius: 20 },
   notice: {
     position: 'absolute',

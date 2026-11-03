@@ -66,27 +66,61 @@ function Karaoke({ lyrics, elapsed, total }: { lyrics: string; elapsed: number; 
   );
 }
 
+// Simulation de la reconnaissance vocale : les mots arrivent un par un en gris (provisoires),
+// la reconnaissance peut corriger un mot, puis la phrase passe en doré à la pause (validée).
+const CORRECTIONS: Record<number, Record<number, string>> = {
+  0: { 1: 'pair' }, // « père » d'abord compris « pair »
+  3: { 4: 'la danse' }, // « l'absence » d'abord compris « la danse »
+};
+
 function LiveCaptions({ running }: { running: boolean }) {
-  // les mots arrivent un par un, comme une transcription en direct
-  const words = useMemo(() => LIVE_CAPTIONS.join(' / ').split(' '), []);
-  const [n, setN] = useState(0);
+  const phrases = useMemo(() => LIVE_CAPTIONS.map((p) => p.split(' ')), []);
+  const [p, setP] = useState(0); // phrase en cours
+  const [n, setN] = useState(0); // mots déjà entendus
+  const [validated, setValidated] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+
   useEffect(() => {
     if (!running) return;
-    const t = setInterval(() => setN((x) => (x + 1) % (words.length + 6)), 380);
-    return () => clearInterval(t);
-  }, [running, words.length]);
-  const shown = words.slice(0, Math.min(n, words.length)).join(' ');
-  const parts = shown.split(' / ');
-  const current = parts[parts.length - 1] ?? '';
-  const previous = parts.length > 1 ? parts[parts.length - 2] : '';
+    const words = phrases[p % phrases.length];
+    let t: ReturnType<typeof setTimeout>;
+    if (!validated && n < words.length) t = setTimeout(() => setN(n + 1), 320 + Math.random() * 180);
+    else if (!validated) t = setTimeout(() => setValidated(true), 650); // pause → validation
+    else
+      t = setTimeout(() => {
+        setHistory((h) => [...h.slice(-1), words.join(' ')]);
+        setP(p + 1);
+        setN(0);
+        setValidated(false);
+      }, 900);
+    return () => clearTimeout(t);
+  }, [running, p, n, validated, phrases]);
+
+  const idx = p % phrases.length;
+  const words = phrases[idx];
+  const fixes = CORRECTIONS[idx] ?? {};
+  const last = history[history.length - 1];
   return (
     <View>
-      {!!previous && <Text style={styles.prev}>{previous}</Text>}
-      <Text style={[styles.current, { color: colors.white }]}>
-        {current}
-        <Text style={styles.cursor}> ▍</Text>
+      {!!last && <Text style={[styles.prev, { color: 'rgba(243,210,122,0.55)' }]}>{last}</Text>}
+      <Text style={styles.current}>
+        {words.slice(0, n).map((w, i) => {
+          // un mot « mal compris » reste faux tant que la suite de la phrase n'est pas arrivée
+          const wrong = !validated && fixes[i] && n < Math.min(words.length, i + 4);
+          return (
+            <Text key={i} style={validated ? styles.on : styles.provisional}>
+              {wrong ? fixes[i] : w}
+              {i < n - 1 ? ' ' : ''}
+            </Text>
+          );
+        })}
+        {!validated && <Text style={styles.cursor}> ▍</Text>}
       </Text>
-      <Text style={styles.captionNote}>Transcription automatique · peut contenir des erreurs</Text>
+      <View style={styles.legend}>
+        <Text style={styles.legendGrey}>● provisoire</Text>
+        <Text style={styles.legendGold}>● validé</Text>
+        <Text style={styles.captionNote}>Transcription automatique</Text>
+      </View>
     </View>
   );
 }
@@ -113,5 +147,9 @@ const styles = StyleSheet.create({
   progress: { height: 2.5, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.12)', marginTop: 12, overflow: 'hidden' },
   fill: { height: 2.5, backgroundColor: GOLD },
   cursor: { color: '#FF5A6E' },
-  captionNote: { color: 'rgba(255,255,255,0.4)', fontSize: 10.5, marginTop: 8 },
+  captionNote: { flex: 1, textAlign: 'right', color: 'rgba(255,255,255,0.4)', fontSize: 10.5 },
+  provisional: { color: 'rgba(255,255,255,0.6)' },
+  legend: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  legendGrey: { color: 'rgba(255,255,255,0.6)', fontSize: 10.5, fontWeight: '700' },
+  legendGold: { color: GOLD, fontSize: 10.5, fontWeight: '700' },
 });
