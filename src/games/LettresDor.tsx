@@ -1,12 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, goldGradient } from '../theme';
-import { LiveBadge, LiveChat, LiveSlide, Toast, tap, useLiveChat, useToast } from '../talk/LiveKit';
+import {
+  BlurMask,
+  Canvas,
+  Circle,
+  Group,
+  LinearGradient as SkLinear,
+  Oval,
+  Path,
+  RadialGradient,
+  Rect,
+  Shadow,
+  Skia,
+  Text as SkText,
+  matchFont,
+  vec,
+} from '@shopify/react-native-skia';
+import { goldGradient } from '../theme';
+import { GiftGrid, LiveSlide, Sheet, Toast, faceOf, tap, useFloaters, useLiveChat, useToast, type Gift } from '../talk/LiveKit';
 import { DEENA_PHOTO } from '../table/data';
 import { findPerson } from '../world/data';
 import { useSession } from '../lib/session';
@@ -25,12 +41,17 @@ import {
   type Op,
 } from './engine';
 
-// « Lettres d'Or » (nom provisoire) : un jeu de lettres et de chiffres en live.
-// 4 joueurs sur scène, réponses cachées, chrono qui s'arrête quand tout le monde a répondu,
-// puis révélation. Manches : Lettres, Lettres, Chiffres. Le dernier descend de la scène.
+// « Lettres d'Or Zembo » (nom provisoire) : le jeu des lettres et des chiffres en live.
+// 4 joueurs sur scène (caméra obligatoire), réponses cachées, chrono qui s'arrête quand
+// tout le monde a répondu, puis révélation. Manches : Lettres, Lettres, Chiffres.
 // Ici : toi contre 3 joueurs simulés.
 
 const GOLD = '#F3D27A';
+const GOLD2 = '#E9B949';
+const INK = '#1D1405';
+const NAVY = 'rgba(14,16,52,0.88)';
+const PURPLE = '#8B5CF6';
+const BLUE = '#5B7CFF';
 const ROUNDS = ['L', 'L', 'C'] as const;
 const DURATION = { L: 30, C: 40 };
 const TICK = 250;
@@ -56,21 +77,29 @@ const botPlayer = (id: string, level?: BotLevel): Player => {
 };
 
 const CHAT0: [string, string][] = [
-  ['Fatou', 'Allez Kenji 🔥'],
-  ['Yann', "J'adore ce jeu en live 😍"],
-  ['Nadia', 'Moussa va tout rafler 👀'],
+  ['Fatou', '🔥 Ce jeu est trop bien !'],
+  ['Yann', 'Allez Moussa ! 💪'],
+  ['Emma', 'Quel mot vous trouvez ? 🤔'],
+  ['Nadia', 'Hâte de voir les réponses !'],
 ];
 const AUTO: [string, string][] = [
   ['Karim', 'Moi je vois un 8 lettres 😏'],
-  ['Emma', 'Les réponses cachées, ça met la pression 😅'],
+  ['Sophie', 'Lettres d’Or Zembo, j’adore ! 👑'],
   ['Momo', 'Le compte est bon ?!'],
-  ['Sophie', 'Awa est trop forte 💯'],
+  ['Lina', 'Awa est trop forte 💯'],
   ['Djamal', 'Je veux monter sur scène 🙋'],
-  ['Lina', 'Chrono arrêté, révélation !! 👏'],
-  ['Alex', "J'ai trouvé un 9 lettres 🤯"],
+  ['Alex', 'Chrono arrêté, révélation !! 👏'],
+  ['Yann', 'Les réponses cachées, ça met la pression 😅'],
+  ['Fatou', 'Kenji calcule trop vite 🤯'],
 ];
-
-const mmss = (s: number) => `0:${String(Math.max(0, Math.ceil(s))).padStart(2, '0')}`;
+const GIFTS: Gift[] = [
+  { name: 'Rose', emoji: '🌹', cost: 5 },
+  { name: 'Cœur', emoji: '💖', cost: 10 },
+  { name: 'Lettre d’or', emoji: '🅰️', cost: 20 },
+  { name: 'Étoile', emoji: '⭐', cost: 25 },
+  { name: 'Trophée', emoji: '🏆', cost: 50 },
+  { name: 'Couronne', emoji: '👑', cost: 99 },
+];
 
 export function LettresDor({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
@@ -87,6 +116,10 @@ function Game({ onClose }: { onClose: () => void }) {
   const { profile } = useSession();
   const toast = useToast();
   const chat = useLiveChat(CHAT0, AUTO, 3800);
+  const floaters = useFloaters();
+  const [giftOpen, setGiftOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const chatY = useRef(600);
 
   const [players, setPlayers] = useState<Player[]>(() => [
     { id: 'me', name: profile?.pseudo ? `@${profile.pseudo}` : 'Toi', photo: DEENA_PHOTO, me: true, score: 0 },
@@ -107,7 +140,6 @@ function Game({ onClose }: { onClose: () => void }) {
 
   // saisie lettres
   const [picked, setPicked] = useState<number[]>([]);
-  const [order, setOrder] = useState<number[]>([]);
   // saisie chiffres
   const [items, setItems] = useState<{ v: number; used: boolean; made?: boolean }[]>([]);
   const [sel, setSel] = useState<number | null>(null);
@@ -129,7 +161,6 @@ function Game({ onClose }: { onClose: () => void }) {
         const { letters, solution } = drawLetters();
         d = { kind: 'L', letters, sol: solution };
         for (const b of bots) answers[b.id] = Math.random() < 0.05 ? null : { at: rand(8, 27), word: botWord(solution, b.level!) };
-        setOrder(letters.map((_, i) => i));
         setPicked([]);
       } else {
         const { plaques, target } = drawNumbers();
@@ -151,7 +182,7 @@ function Game({ onClose }: { onClose: () => void }) {
       setStoppedEarly(false);
       setShown(0);
       setPhase('draw');
-    }, 2200);
+    }, 2400);
     return () => clearTimeout(t);
   }, [phase, kind, players]);
 
@@ -163,10 +194,13 @@ function Game({ onClose }: { onClose: () => void }) {
       const t = setTimeout(() => setPhase('play'), 500);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => {
-      setShown((n) => n + 1);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    }, data.kind === 'C' && shown === data.plaques.length ? 700 : 260);
+    const t = setTimeout(
+      () => {
+        setShown((n) => n + 1);
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      },
+      data.kind === 'C' && shown === data.plaques.length ? 700 : 260,
+    );
     return () => clearTimeout(t);
   }, [phase, data, shown]);
 
@@ -231,7 +265,7 @@ function Game({ onClose }: { onClose: () => void }) {
         const a = all[p.id];
         if (!a?.word) return { id: p.id, answer: null, valid: false, points: 0, note: 'Pas de réponse' };
         const ok = isWord(a.word);
-        return { id: p.id, answer: a, valid: ok, points: ok ? a.word.length : 0, note: ok ? `${a.word.length} lettres` : 'Pas dans le dictionnaire' };
+        return { id: p.id, answer: a, valid: ok, points: ok ? a.word.length : 0, note: ok ? `${a.word.length} lettres` : 'Mot refusé' };
       });
       res.sort((x, y) => (x.valid ? x.answer!.word!.length : -1) - (y.valid ? y.answer!.word!.length : -1));
     } else {
@@ -242,7 +276,7 @@ function Game({ onClose }: { onClose: () => void }) {
         if (!a || a.value === undefined) return { id: p.id, answer: null, valid: false, points: 0, note: 'Pas de réponse' };
         const d = dists[i];
         const pts = d === 0 ? 10 : d === min ? 7 : 0;
-        return { id: p.id, answer: a, valid: true, dist: d, points: pts, note: d === 0 ? 'Le compte est bon !' : `Écart de ${d}` };
+        return { id: p.id, answer: a, valid: true, dist: d, points: pts, note: d === 0 ? 'Compte bon !' : `Écart ${d}` };
       });
       res.sort((x, y) => (y.dist ?? 1e9) - (x.dist ?? 1e9));
     }
@@ -255,7 +289,6 @@ function Game({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (phase !== 'reveal') return;
     if (revealed > results.length) {
-      // points ajoutés, puis manche suivante
       if (nextIn <= 0) return;
       const t = setTimeout(() => setNextIn((n) => n - 1), 1000);
       return () => clearTimeout(t);
@@ -292,9 +325,7 @@ function Game({ onClose }: { onClose: () => void }) {
     const out = ranking[ranking.length - 1];
     const ids = players.map((p) => p.id);
     const nextId = CHALLENGERS.find((c) => !ids.includes(c));
-    setPlayers((ps) =>
-      ps.map((p) => (p.id === out.id && !p.me && nextId ? botPlayer(nextId) : { ...p, score: 0 })).map((p) => ({ ...p, score: 0 })),
-    );
+    setPlayers((ps) => ps.map((p) => (p.id === out.id && !p.me && nextId ? botPlayer(nextId) : { ...p, score: 0 })));
     setGame((g) => g + 1);
     setRound(0);
     setPhase('intro');
@@ -310,10 +341,6 @@ function Game({ onClose }: { onClose: () => void }) {
     if (phase !== 'play' || mine) return;
     tap();
     setPicked(picked.filter((_, k) => k !== pos));
-  };
-  const shuffle = () => {
-    tap();
-    setOrder((o) => [...o].sort(() => Math.random() - 0.5));
   };
 
   const pressPlaque = (i: number) => {
@@ -347,491 +374,811 @@ function Game({ onClose }: { onClose: () => void }) {
     setOp(null);
   };
 
+  // ── réactions du live ──
+  const hearts = () => {
+    tap();
+    for (let k = 0; k < 3; k++) setTimeout(() => floaters.add(['❤️', '💖', '💗'][k], width - 46 - Math.random() * 26, chatY.current + 60), k * 120);
+  };
+  const sendComment = () => {
+    const t = draft.trim();
+    if (!t) return;
+    tap();
+    chat.push(profile?.pseudo ?? 'Toi', t, true);
+    setDraft('');
+  };
+
+  // ── mise en page ──
   const card = (width - 24 - 3 * 8) / 4;
-  const tile = Math.min(58, (width - 24 - 4 * 8) / 5);
+  const boardInner = width - 24 - 4 - 24;
+  const ringSize = 78;
+  const tilesW = boardInner - ringSize - 10;
+  const tile = Math.floor((tilesW - 4 * 6) / 5);
   const ranking = [...players].sort((a, b) => b.score - a.score);
   const resultOf = (id: string) => results.find((r) => r.id === id);
   const revealedIds = results.slice(0, revealed).map((r) => r.id);
+  const ringValue = phase === 'play' ? left : phase === 'reveal' ? Math.max(0, duration - elapsed) : duration;
+  const reveal = phase === 'reveal' || phase === 'final';
 
   return (
-    <View style={{ flex: 1 }}>
-      <LinearGradient colors={['#1B1206', '#0B0805', '#000']} style={StyleSheet.absoluteFill} />
-      <Image source={require('../../assets/talk/slam-stage.jpg')} style={[StyleSheet.absoluteFill, { opacity: 0.12 }]} contentFit="cover" />
+    <View style={{ flex: 1, backgroundColor: '#07061A' }}>
+      <Backdrop />
 
-      {/* en-tête du live */}
-      <View style={[styles.header, { paddingTop: T + 6 }]}>
-        <LinearGradient colors={goldGradient} style={styles.logo}>
-          <Text style={styles.logoText}>Aa</Text>
+      {/* ── en-tête ── */}
+      <View style={[styles.header, { paddingTop: T - 4 }]}>
+        <Pressable onPress={onClose} hitSlop={8} style={styles.roundBtn}>
+          <Ionicons name="chevron-back" size={20} color="#fff" />
+        </Pressable>
+        <LinearGradient colors={goldGradient} style={styles.zLogo}>
+          <View style={styles.zInner}>
+            <Text style={styles.zText}>Z</Text>
+          </View>
         </LinearGradient>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.brand}>Lettres d'Or</Text>
-          <Text style={styles.brandSub}>Partie {game} · 4 joueurs sur scène</Text>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={styles.appTitle}>
+            <Text style={{ color: GOLD }}>ZEMBO</Text> Live
+          </Text>
+          <View style={styles.liveRow}>
+            <View style={styles.liveBadge}>
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+            <View style={styles.viewers}>
+              <Ionicons name="eye-outline" size={13} color="#fff" />
+              <Text style={styles.viewersText}>1 248</Text>
+            </View>
+          </View>
         </View>
-        <LiveBadge />
-        <View style={styles.viewers}>
-          <Ionicons name="eye" size={12} color={colors.text} />
-          <Text style={styles.viewersText}>1,4k</Text>
-        </View>
-        <Pressable onPress={onClose} hitSlop={10} style={styles.close}>
-          <Ionicons name="close" size={18} color={colors.text} />
+        <Pressable onPress={() => toast.show('Lien du live copié')} hitSlop={8} style={styles.roundBtn}>
+          <Ionicons name="share-social-outline" size={18} color="#fff" />
+        </Pressable>
+        <Pressable onPress={() => toast.show(`Partie ${game} · 4 joueurs sur scène`)} hitSlop={8} style={[styles.roundBtn, { marginLeft: 8 }]}>
+          <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
         </Pressable>
       </View>
 
-      {/* les 4 joueurs */}
+      {/* ── emblème Lettres d'Or + badge champion ── */}
+      <View>
+        <Emblem width={width} />
+        <View style={styles.champion} pointerEvents="none">
+          <Text style={{ fontSize: 30, textAlign: 'center' }}>🏆</Text>
+          <View style={styles.championBox}>
+            <Text style={styles.championTitle}>Champion</Text>
+            <Text style={styles.championPrize}>500 Zems</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ── manche ── */}
+      <View style={styles.mancheRow}>
+        <View style={styles.manche}>
+          <View style={styles.mancheLabel}>
+            <Text style={styles.mancheText}>
+              Manche {round + 1}/{ROUNDS.length}
+            </Text>
+          </View>
+          <View style={styles.dots}>
+            {ROUNDS.map((_, i) => (
+              <View key={i} style={[styles.dot, i <= round && { backgroundColor: GOLD2 }]} />
+            ))}
+          </View>
+        </View>
+      </View>
+
+      {/* ── le plateau : lettres ou chiffres ── */}
+      <View style={styles.boardWrap}>
+        <View style={styles.board}>
+          <View style={styles.boardLabelWrap} pointerEvents="none">
+            <View style={styles.boardLabel}>
+              <LinearGradient colors={goldGradient} style={styles.boardLabelIcon}>
+                <Text style={styles.boardLabelIconText}>{kind === 'L' ? 'Aa' : '12'}</Text>
+              </LinearGradient>
+              <Text style={styles.boardLabelText}>{kind === 'L' ? 'LES LETTRES' : 'LES CHIFFRES'}</Text>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+            <View style={{ width: tilesW }}>
+              {phase === 'intro' && <IntroText round={round} kind={kind} />}
+
+              {data?.kind === 'L' && phase !== 'intro' && (
+                <View style={styles.tiles}>
+                  {data.letters.map((l, i) => {
+                    const used = picked.includes(i) || !!mine || reveal;
+                    const visible = i < shown || phase !== 'draw';
+                    return (
+                      <Pressable key={i} onPress={() => pickTile(i)} disabled={!visible}>
+                        {visible ? (
+                          <LinearGradient
+                            colors={used ? ['#4A3A1C', '#2B2210'] : ['#FFF0B0', '#F3C14B', '#B98318']}
+                            style={[styles.tile, { width: tile, height: tile }]}
+                          >
+                            <Text style={[styles.tileText, { fontSize: tile * 0.5 }, used && { color: 'rgba(243,210,122,0.5)' }]}>{l}</Text>
+                          </LinearGradient>
+                        ) : (
+                          <View style={[styles.tile, styles.tileEmpty, { width: tile, height: tile }]} />
+                        )}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+
+              {data?.kind === 'C' && phase !== 'intro' && (
+                <View>
+                  <View style={styles.targetRow}>
+                    <Text style={styles.targetLabel}>À TROUVER</Text>
+                    <Text style={styles.target}>{shown > data.plaques.length || phase !== 'draw' ? data.target : '???'}</Text>
+                  </View>
+                  <View style={styles.plaques}>
+                    {(phase === 'draw' || reveal ? data.plaques.map((v) => ({ v, used: false, made: false })) : items).map((x, i) => {
+                      const visible = i < shown || phase !== 'draw';
+                      if (x.used) return null;
+                      const w = (tilesW - 12) / 3;
+                      return (
+                        <Pressable key={i} onPress={() => pressPlaque(i)} disabled={!visible || reveal}>
+                          <View style={[styles.plaque, { width: w }, x.made && styles.plaqueMade, sel === i && !reveal && styles.plaqueSel, !visible && styles.tileEmpty]}>
+                            <Text style={[styles.plaqueText, x.made && { color: INK }]}>{visible ? x.v : ''}</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+            </View>
+            <TimerRing size={ringSize} value={ringValue} total={duration} paused={phase === 'reveal'} />
+          </View>
+
+          {/* ligne du bas du plateau : ma saisie, ou le résultat */}
+          <View style={{ marginTop: 10 }}>
+            {(phase === 'intro' || phase === 'draw' || phase === 'final') && (
+              <Text style={styles.hint}>
+                {phase === 'draw' ? (kind === 'L' ? 'Tirage des lettres…' : 'Tirage des plaques…') : 'Les réponses restent cachées jusqu’à la fin du chrono.'}
+              </Text>
+            )}
+
+            {phase === 'play' && data?.kind === 'L' && (
+              <View style={styles.inputRow}>
+                <View style={styles.strip}>
+                  {picked.length === 0 ? (
+                    <Text style={styles.stripPh} numberOfLines={1}>Trouve le mot le plus long</Text>
+                  ) : (
+                    picked.map((i, pos) => (
+                      <Pressable key={pos} onPress={() => unpick(pos)} hitSlop={2}>
+                        <Text style={styles.stripLetter}>{mine ? '•' : data.letters[i]}</Text>
+                      </Pressable>
+                    ))
+                  )}
+                  {picked.length > 0 && <Text style={styles.stripLen}>{picked.length}</Text>}
+                </View>
+                <Pressable onPress={() => picked.length && unpick(picked.length - 1)} disabled={!!mine} style={[styles.iconBtn, !!mine && { opacity: 0.4 }]}>
+                  <Ionicons name="backspace-outline" size={18} color="#fff" />
+                </Pressable>
+                <SubmitBtn done={!!mine} onPress={submit} />
+              </View>
+            )}
+
+            {phase === 'play' && data?.kind === 'C' && (
+              <View style={styles.inputRow}>
+                {OPS.map((o) => (
+                  <Pressable
+                    key={o}
+                    onPress={() => {
+                      if (mine || sel === null) return;
+                      tap();
+                      setOp(op === o ? null : o);
+                    }}
+                    style={[styles.op, op === o && styles.opOn, (sel === null || !!mine) && { opacity: 0.4 }]}
+                  >
+                    <Text style={[styles.opText, op === o && { color: INK }]}>{o}</Text>
+                  </Pressable>
+                ))}
+                <Pressable onPress={undo} disabled={!!mine} style={[styles.iconBtn, !!mine && { opacity: 0.4 }]}>
+                  <Ionicons name="arrow-undo" size={17} color="#fff" />
+                </Pressable>
+                <SubmitBtn done={!!mine} onPress={submit} small />
+              </View>
+            )}
+            {phase === 'play' && data?.kind === 'C' && myValue !== null && !mine && (
+              <Text style={styles.myCount}>
+                Ton compte : {myValue} {myValue === data.target ? '🎯' : `· écart ${Math.abs(myValue - data.target)}`}
+              </Text>
+            )}
+
+            {phase === 'reveal' && data && (
+              <View style={styles.revealLine}>
+                <View style={{ flex: 1 }}>
+                  {revealed <= results.length ? (
+                    <Text style={styles.revealMsg}>{stoppedEarly ? 'Tout le monde a répondu : chrono arrêté ! Révélation…' : 'Temps écoulé ! Révélation…'}</Text>
+                  ) : data.kind === 'L' ? (
+                    <Text style={styles.revealMsg} numberOfLines={2}>
+                      Meilleur mot : <Text style={{ color: GOLD, fontWeight: '900' }}>{data.sol.words[0]}</Text> ({data.sol.words[0]?.length} lettres)
+                    </Text>
+                  ) : (
+                    <Text style={[styles.revealMsg, { fontSize: 11.5 }]} numberOfLines={2}>
+                      {data.best === data.target ? 'Le compte est bon : ' : `Au plus près : ${data.best} · `}
+                      <Text style={{ color: GOLD, fontWeight: '800' }}>{data.bestSteps.join(' · ')}</Text>
+                    </Text>
+                  )}
+                </View>
+                {revealed > results.length && (
+                  <Pressable onPress={next} style={styles.nextBtn}>
+                    <Text style={styles.nextText}>{nextIn}</Text>
+                    <Ionicons name="play-forward" size={13} color={INK} />
+                  </Pressable>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+
+      {/* ── les 4 joueurs (caméras) ── */}
       <View style={styles.players}>
         {players.map((p) => {
-          const r = resultOf(p.id);
-          const isRevealed = phase === 'reveal' && revealedIds.includes(p.id);
           const lead = ranking[0].id === p.id && ranking[0].score > ranking[1].score;
+          const r = resultOf(p.id);
+          const flash = phase === 'reveal' && revealedIds.includes(p.id) && !!r?.points;
           return (
-            <View key={p.id} style={[styles.player, { width: card }, p.me && styles.playerMe]}>
-              <View>
-                <Image source={p.photo} style={styles.playerAv} />
-                {lead && <Text style={styles.crown}>👑</Text>}
-              </View>
-              <Text style={styles.playerName} numberOfLines={1}>
-                {p.me ? 'Toi' : p.name}
-              </Text>
-              <Text style={styles.playerScore}>{p.score} pts</Text>
-              {phase === 'play' && (
-                <View style={[styles.status, answered(p.id) && styles.statusOn]}>
-                  <Text style={[styles.statusText, answered(p.id) && { color: '#1D1405' }]}>{answered(p.id) ? '✓ a répondu' : 'réfléchit…'}</Text>
-                </View>
-              )}
-              {phase === 'reveal' && (
-                <View style={[styles.status, isRevealed && r?.points ? styles.statusOn : null]}>
-                  <Text style={[styles.statusText, isRevealed && r?.points ? { color: '#1D1405' } : null]}>
-                    {isRevealed ? (r?.points ? `+${r.points}` : '0') : '🔒 cachée'}
+            <View key={p.id} style={[styles.cam, { width: card, height: card * 1.3 }, p.me && styles.camMe, flash && styles.camFlash]}>
+              <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
+              <LinearGradient colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']} locations={[0.45, 0.75, 1]} style={StyleSheet.absoluteFill} />
+              {lead && <Text style={styles.camCrown}>👑</Text>}
+              <View style={styles.camDot} />
+              <View style={styles.camBottom}>
+                <Text style={styles.camName} numberOfLines={1}>
+                  {p.me ? 'Toi' : p.name}
+                </Text>
+                <LinearGradient colors={['#FFE89A', '#E9B949', '#B98318']} style={styles.ptsPill}>
+                  <Text style={styles.ptsText}>
+                    {p.score}
+                    <Text style={{ fontSize: 10 }}> pts</Text>
                   </Text>
-                </View>
-              )}
+                </LinearGradient>
+              </View>
             </View>
           );
         })}
       </View>
 
-      {/* bandeau de la manche + chrono */}
-      {phase !== 'final' && (
-        <View style={styles.roundBar}>
-          <View style={styles.roundChips}>
-            {ROUNDS.map((k, i) => (
-              <View key={i} style={[styles.roundChip, i === round && styles.roundChipOn, i < round && styles.roundChipDone]}>
-                <Text style={[styles.roundChipText, i === round && { color: '#1D1405' }]}>{k === 'L' ? 'Lettres' : 'Chiffres'}</Text>
-              </View>
-            ))}
-          </View>
-          {phase === 'reveal' && <Ionicons name="pause-circle" size={22} color={GOLD} style={{ marginRight: 4 }} />}
-          <Text style={[styles.timer, phase === 'play' && left <= 5 && { color: '#FF5A6E' }]}>
-            {phase === 'play' ? mmss(left) : phase === 'reveal' ? mmss(duration - Math.min(elapsed, duration)) : mmss(duration)}
-          </Text>
-        </View>
-      )}
-      {phase !== 'final' && (
-        <View style={styles.timeTrack}>
-          <View style={[styles.timeFill, { width: `${phase === 'play' ? (left / duration) * 100 : phase === 'reveal' ? ((duration - elapsed) / duration) * 100 : 100}%` }]} />
-        </View>
-      )}
-
-      <View style={{ flex: 1, paddingHorizontal: 12 }}>
-        {phase === 'intro' && <Intro round={round} kind={kind} />}
-
-        {/* ── Lettres ── */}
-        {data?.kind === 'L' && (phase === 'draw' || phase === 'play') && (
-          <View>
-            <Text style={styles.hint}>
-              {phase === 'draw' ? 'Tirage des lettres…' : mine ? '🔒 Réponse envoyée. Elle reste cachée jusqu’à la révélation.' : 'Forme le mot le plus long possible'}
-            </Text>
-            <View style={styles.tiles}>
-              {order.map((i, k) => {
-                const used = picked.includes(i);
-                const visible = k < shown || phase === 'play';
-                return (
-                  <Pressable key={i} onPress={() => pickTile(i)} disabled={!visible}>
-                    {visible ? (
-                      <LinearGradient colors={used || mine ? ['#3A2E18', '#2A2010'] : goldGradient} style={[styles.tile, { width: tile, height: tile }]}>
-                        <Text style={[styles.tileText, (used || mine) && { color: 'rgba(243,210,122,0.35)' }]}>{data.letters[i]}</Text>
-                      </LinearGradient>
-                    ) : (
-                      <View style={[styles.tile, styles.tileEmpty, { width: tile, height: tile }]} />
-                    )}
-                  </Pressable>
-                );
-              })}
+      {/* ── réponses cachées ── */}
+      <View style={styles.answersWrap}>
+        <View style={styles.answers}>
+          <View style={styles.answersLabelWrap} pointerEvents="none">
+            <View style={styles.answersLabel}>
+              <Text style={{ fontSize: 13 }}>🔒</Text>
+              <Text style={styles.answersLabelText}>{phase === 'reveal' && revealed > 0 ? 'Réponses révélées' : 'Réponses (cachées)'}</Text>
             </View>
-            {phase === 'play' && (
-              <>
-                <View style={styles.answerRow}>
-                  {picked.length === 0 && <Text style={styles.answerPh}>Touche les lettres…</Text>}
-                  {picked.map((i, pos) => (
-                    <Pressable key={pos} onPress={() => unpick(pos)} style={styles.answerTile}>
-                      <Text style={styles.answerTileText}>{mine ? '•' : data.letters[i]}</Text>
-                    </Pressable>
-                  ))}
-                  {picked.length > 0 && <Text style={styles.answerLen}>{picked.length}</Text>}
-                </View>
-                <View style={styles.actions}>
-                  <ActionBtn icon="shuffle" label="Mélanger" onPress={shuffle} disabled={!!mine} />
-                  <ActionBtn icon="backspace-outline" label="Effacer" onPress={() => picked.length && unpick(picked.length - 1)} disabled={!!mine || !picked.length} />
-                  <SubmitBtn done={!!mine} onPress={submit} />
-                </View>
-              </>
-            )}
           </View>
-        )}
-
-        {/* ── Chiffres ── */}
-        {data?.kind === 'C' && (phase === 'draw' || phase === 'play') && (
-          <View>
-            <View style={styles.targetBox}>
-              <Text style={styles.targetLabel}>À TROUVER</Text>
-              <Text style={styles.target}>{shown > data.plaques.length || phase === 'play' ? data.target : '???'}</Text>
-            </View>
-            <Text style={styles.hint}>
-              {phase === 'draw'
-                ? 'Tirage des plaques…'
-                : mine
-                  ? '🔒 Compte envoyé. Il reste caché jusqu’à la révélation.'
-                  : 'Touche une plaque, une opération, puis une autre plaque'}
-            </Text>
-            <View style={styles.plaques}>
-              {(phase === 'draw' ? data.plaques.map((v) => ({ v, used: false, made: false })) : items).map((x, i) => {
-                const visible = i < shown || phase === 'play';
-                if (x.used) return null;
-                return (
-                  <Pressable key={i} onPress={() => pressPlaque(i)} disabled={!visible}>
-                    <View style={[styles.plaque, x.made && styles.plaqueMade, sel === i && styles.plaqueSel, !visible && styles.tileEmpty]}>
-                      <Text style={[styles.plaqueText, x.made && { color: '#1D1405' }]}>{visible ? x.v : ''}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {phase === 'play' && (
-              <>
-                <View style={styles.ops}>
-                  {OPS.map((o) => (
-                    <Pressable
-                      key={o}
-                      onPress={() => {
-                        if (mine || sel === null) return;
-                        tap();
-                        setOp(op === o ? null : o);
-                      }}
-                      style={[styles.op, op === o && styles.opOn, (sel === null || !!mine) && { opacity: 0.4 }]}
-                    >
-                      <Text style={[styles.opText, op === o && { color: '#1D1405' }]}>{o}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <View style={styles.calc}>
-                  {steps.length === 0 ? (
-                    <Text style={styles.answerPh}>Tes calculs s'affichent ici</Text>
-                  ) : (
-                    <Text style={styles.calcText} numberOfLines={2}>
-                      {mine ? 'Calculs cachés' : steps.map((s) => s.text).join('  ·  ')}
-                    </Text>
-                  )}
-                  {myValue !== null && !mine && (
-                    <Text style={styles.calcMine}>
-                      Ton compte : {myValue} {myValue === data.target ? '🎯' : `(écart ${Math.abs(myValue - data.target)})`}
-                    </Text>
-                  )}
-                </View>
-                <View style={styles.actions}>
-                  <ActionBtn icon="arrow-undo" label="Annuler" onPress={undo} disabled={!!mine} />
-                  <SubmitBtn done={!!mine} onPress={submit} />
-                </View>
-              </>
-            )}
-          </View>
-        )}
-
-        {/* ── Révélation ── */}
-        {phase === 'reveal' && data && (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
-            <Text style={styles.stopped}>{stoppedEarly ? 'Tout le monde a répondu : chrono arrêté !' : 'Temps écoulé !'}</Text>
-            <Text style={styles.drawRecap}>
-              {data.kind === 'L' ? data.letters.join(' ') : `${data.plaques.join(' · ')}  →  ${data.target}`}
-            </Text>
-            {results.map((r, i) => {
-              const p = players.find((x) => x.id === r.id)!;
-              const on = i < revealed;
+          <View style={styles.slots}>
+            {players.map((p) => {
+              const r = resultOf(p.id);
+              const isOpen = phase === 'reveal' && revealedIds.includes(p.id);
+              const did = phase === 'play' ? answered(p.id) : phase === 'reveal';
               return (
-                <View key={r.id} style={[styles.revealRow, on && r.points > 0 && styles.revealRowWin]}>
-                  <Image source={p.photo} style={styles.revealAv} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.revealName}>{p.me ? 'Toi' : p.name}</Text>
-                    {on ? (
-                      <>
-                        <Text style={[styles.revealAnswer, !r.valid && r.answer && styles.revealBad]}>
-                          {r.answer ? (data.kind === 'L' ? r.answer.word : r.answer.value) : '—'}
-                        </Text>
-                        {data.kind === 'C' && !!r.answer?.steps?.length && (
-                          <Text style={styles.revealSteps} numberOfLines={2}>
-                            {r.answer.steps.join('  ·  ')}
-                          </Text>
-                        )}
-                      </>
-                    ) : (
-                      <Text style={styles.revealHidden}>🔒 Réponse cachée</Text>
-                    )}
-                  </View>
-                  {on && (
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={[styles.revealPts, !r.points && { color: colors.textFaint }]}>+{r.points}</Text>
-                      <Text style={[styles.revealNote, !r.valid && r.answer && { color: '#FF8A8A' }]}>{r.note}</Text>
-                    </View>
+                <View key={p.id} style={[styles.slot, { width: card - 6 }, did && !isOpen && styles.slotDone, isOpen && r?.points ? styles.slotWin : null]}>
+                  {isOpen && r ? (
+                    <>
+                      <Text style={[styles.slotAnswer, !r.valid && !!r.answer && styles.slotBad]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                        {r.answer ? (data?.kind === 'L' ? r.answer.word : r.answer.value) : '—'}
+                      </Text>
+                      <Text style={[styles.slotPts, !r.points && { color: 'rgba(255,255,255,0.5)' }]} numberOfLines={1}>
+                        {r.points ? `+${r.points}` : r.answer ? r.note : 'Aucune'}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name={did ? 'lock-closed' : 'lock-closed-outline'} size={17} color={did ? GOLD : 'rgba(243,210,122,0.75)'} />
+                      <Text style={[styles.slotDots, did && { color: GOLD }]}>{did ? '✓' : '•••'}</Text>
+                    </>
                   )}
                 </View>
               );
             })}
-            {revealed > results.length && (
-              <View style={styles.best}>
-                {data.kind === 'L' ? (
-                  <Text style={styles.bestText}>
-                    Meilleur mot possible : <Text style={{ color: GOLD, fontWeight: '900' }}>{data.sol.words[0]}</Text> ({data.sol.words[0]?.length} lettres)
-                  </Text>
-                ) : (
-                  <Text style={styles.bestText}>
-                    {data.best === data.target ? 'Le compte est bon : ' : `Meilleur résultat possible : ${data.best}. `}
-                    <Text style={{ color: GOLD, fontWeight: '800' }}>{data.bestSteps.join('  ·  ')}</Text>
-                  </Text>
-                )}
-                <Pressable onPress={next} style={styles.nextBtn}>
-                  <Text style={styles.nextText}>{round < ROUNDS.length - 1 ? `Manche suivante (${nextIn})` : `Résultats (${nextIn})`}</Text>
-                  <Ionicons name="chevron-forward" size={14} color="#1D1405" />
-                </Pressable>
-              </View>
-            )}
-          </ScrollView>
-        )}
-
-        {/* ── Fin de partie ── */}
-        {phase === 'final' && <Final ranking={ranking} onReplay={replay} onClose={onClose} />}
+          </View>
+        </View>
       </View>
 
-      {/* chat du live */}
-      {phase !== 'final' && (
-        <View style={{ paddingBottom: insets.bottom + 6, height: 96 + insets.bottom }} pointerEvents="none">
-          <LiveChat msgs={chat.msgs} max={3} />
+      {/* ── chat ── */}
+      <View style={styles.chatWrap} onLayout={(e) => (chatY.current = e.nativeEvent.layout.y)}>
+        <View style={styles.chat}>
+          {chat.msgs.slice(-3).map((m) => (
+            <View key={m.id} style={styles.msg}>
+              <Image source={faceOf(m.user, 60)} style={[styles.msgAv, m.me && { borderColor: GOLD, borderWidth: 1.5 }]} />
+              <Text style={styles.msgName} numberOfLines={1}>
+                {m.user}
+              </Text>
+              <Text style={styles.msgText} numberOfLines={1}>
+                {m.text}
+              </Text>
+            </View>
+          ))}
         </View>
-      )}
-      <Toast text={toast.text} top={T + 120} />
+        <Pressable onPress={hearts} style={styles.likeBubble}>
+          <Ionicons name="thumbs-up" size={18} color="#fff" />
+        </Pressable>
+      </View>
+
+      {/* ── barre du bas ── */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'position' : undefined}>
+        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom - 6, 10) }]}>
+          <View style={styles.comment}>
+            <Ionicons name="chatbubble-outline" size={18} color="rgba(255,255,255,0.85)" />
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder="Écrire un commentaire…"
+              placeholderTextColor="rgba(255,255,255,0.6)"
+              style={styles.commentInput}
+              onSubmitEditing={sendComment}
+              returnKeyType="send"
+              selectionColor={GOLD}
+            />
+            <Pressable onPress={() => setDraft((d) => d + '😊')} hitSlop={6}>
+              <Ionicons name="happy-outline" size={21} color="rgba(255,255,255,0.85)" />
+            </Pressable>
+          </View>
+          <RoundGold onPress={() => setGiftOpen(true)}>
+            <Text style={{ fontSize: 20 }}>🎁</Text>
+          </RoundGold>
+          <RoundGold
+            onPress={() => {
+              tap();
+              floaters.add('🌹', width - 70, chatY.current + 40);
+              toast.show('Tu as envoyé une rose 🌹');
+            }}
+          >
+            <Text style={{ fontSize: 20 }}>🌹</Text>
+          </RoundGold>
+          <RoundGold onPress={hearts}>
+            <Text style={{ fontSize: 20 }}>👍</Text>
+          </RoundGold>
+        </View>
+      </KeyboardAvoidingView>
+
+      {floaters.layer}
+
+      {/* ── fin de partie ── */}
+      {phase === 'final' && <Final ranking={ranking} onReplay={replay} onClose={onClose} top={T + 150} />}
+
+      <Sheet open={giftOpen} onClose={() => setGiftOpen(false)} title="Envoyer un cadeau" subtitle="Soutiens tes joueurs préférés">
+        <GiftGrid
+          gifts={GIFTS}
+          onPick={(g) => {
+            setGiftOpen(false);
+            floaters.add(g.emoji, undefined, undefined, true);
+            toast.show(`${g.emoji} ${g.name} envoyé !`);
+          }}
+        />
+      </Sheet>
+      <Toast text={toast.text} top={T + 110} />
     </View>
   );
 }
 
-function Intro({ round, kind }: { round: number; kind: 'L' | 'C' }) {
+// ── Fond de scène : dégradé violet, projecteurs, halo doré ──
+const Backdrop = memo(function Backdrop() {
+  const { width: W, height: H } = useWindowDimensions();
+  const beams = useMemo(
+    () =>
+      [
+        [8, -40, 70, 0.55],
+        [W - 8, W - 70, W + 40, 0.55],
+        [W * 0.22, W * 0.05, W * 0.3, 0.3],
+        [W * 0.78, W * 0.7, W * 0.95, 0.3],
+      ].map(([a, b, c, o]) => ({ path: Skia.Path.MakeFromSVGString(`M ${a} 60 L ${b} ${H * 0.72} L ${c} ${H * 0.72} Z`)!, o })),
+    [W, H],
+  );
+  return (
+    <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Rect x={0} y={0} width={W} height={H}>
+        <SkLinear start={vec(0, 0)} end={vec(0, H)} colors={['#1B0F45', '#0E0B33', '#0A0A2A', '#07061A']} positions={[0, 0.35, 0.7, 1]} />
+      </Rect>
+      {/* projecteurs */}
+      {beams.map((b, i) => (
+        <Path key={i} path={b.path} opacity={b.o}>
+          <SkLinear start={vec(0, 60)} end={vec(0, H * 0.72)} colors={['rgba(110,140,255,0.55)', 'rgba(110,140,255,0)']} />
+          <BlurMask blur={10} style="normal" />
+        </Path>
+      ))}
+      {/* halos violets */}
+      <Circle cx={0} cy={H * 0.33} r={W * 0.55}>
+        <RadialGradient c={vec(0, H * 0.33)} r={W * 0.55} colors={['rgba(150,80,255,0.45)', 'rgba(150,80,255,0)']} />
+      </Circle>
+      <Circle cx={W} cy={H * 0.33} r={W * 0.55}>
+        <RadialGradient c={vec(W, H * 0.33)} r={W * 0.55} colors={['rgba(150,80,255,0.45)', 'rgba(150,80,255,0)']} />
+      </Circle>
+      {/* halo doré derrière le titre */}
+      <Circle cx={W / 2} cy={H * 0.2} r={W * 0.62}>
+        <RadialGradient c={vec(W / 2, H * 0.2)} r={W * 0.62} colors={['rgba(255,190,80,0.42)', 'rgba(255,170,60,0.12)', 'rgba(255,170,60,0)']} positions={[0, 0.5, 1]} />
+      </Circle>
+      {/* scène dorée en bas */}
+      <Oval x={-W * 0.3} y={H - 90} width={W * 1.6} height={150}>
+        <RadialGradient c={vec(W / 2, H - 15)} r={W * 0.8} colors={['rgba(255,190,80,0.45)', 'rgba(255,190,80,0)']} />
+      </Oval>
+      {/* paillettes */}
+      {Array.from({ length: 22 }).map((_, i) => {
+        const x = (i * 97) % W;
+        const y = 90 + ((i * 173) % (H * 0.75));
+        return <Circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 2 : 1.2} color={i % 2 ? 'rgba(255,215,120,0.55)' : 'rgba(170,190,255,0.45)'} />;
+      })}
+    </Canvas>
+  );
+});
+
+// ── Titre « Lettres d'Or » avec couronne, lauriers et bandeau ZEMBO ──
+const Emblem = memo(function Emblem({ width }: { width: number }) {
+  const W = width;
+  const H = 96;
+  const font = useMemo(() => matchFont({ fontFamily: 'Georgia', fontSize: 36, fontStyle: 'italic', fontWeight: 'bold' }), []);
+  const title = 'Lettres d’Or';
+  const tw = font.measureText(title).width;
+  const cx = W / 2 - 22; // décalé à gauche pour laisser la place au badge Champion
+  const tx = cx - tw / 2;
+  const leaves = useMemo(() => {
+    const out: { x: number; y: number; a: number }[] = [];
+    const n = 7;
+    const at = (t: number) => ({ x: tx - 6 - 30 * Math.sin(t * Math.PI * 0.85), y: 90 - 74 * t });
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const p = at(t);
+      const q = at(Math.min(1, t + 0.05));
+      const base = Math.atan2(q.y - p.y, q.x - p.x);
+      out.push({ x: p.x, y: p.y, a: base - 0.75 }, { x: p.x, y: p.y, a: base + 0.75 });
+    }
+    return out;
+  }, [tx]);
+  const shift = { transform: [{ translateX: cx - W / 2 }] };
+  const leaf = (x: number, y: number, a: number, mirror: boolean, k: number) => (
+    <Group key={`${mirror ? 'r' : 'l'}${k}`} transform={[{ translateX: mirror ? 2 * cx - x : x }, { translateY: y }, { rotate: mirror ? Math.PI - a : a }]}>
+      <Oval x={0} y={-3.6} width={17} height={7.2}>
+        <SkLinear start={vec(0, -4)} end={vec(0, 4)} colors={['#FFE89A', '#D9A43A', '#9C6A12']} />
+      </Oval>
+    </Group>
+  );
+  return (
+    <View style={{ height: H + 12, alignItems: 'center' }} pointerEvents="none">
+      <Canvas style={{ width: W, height: H }}>
+        {leaves.map((l, k) => leaf(l.x, l.y, l.a, false, k))}
+        {leaves.map((l, k) => leaf(l.x, l.y, l.a, true, k))}
+        <SkText x={tx} y={64} text={title} font={font}>
+          <SkLinear start={vec(0, 32)} end={vec(0, 72)} colors={['#FFF6C8', '#F6CD5A', '#C88A1E', '#8E5C0E']} positions={[0, 0.4, 0.75, 1]} />
+          <Shadow dx={0} dy={2} blur={3} color="rgba(0,0,0,0.65)" />
+          <Shadow dx={0} dy={0} blur={12} color="rgba(255,190,70,0.55)" />
+        </SkText>
+      </Canvas>
+      <Text style={[styles.crown, shift]}>👑</Text>
+      <LinearGradient colors={['#FFF0B0', '#EBB945', '#A9740F']} style={[styles.zemboPill, shift]}>
+        <Text style={styles.zemboPillText}>ZEMBO</Text>
+      </LinearGradient>
+    </View>
+  );
+});
+
+// ── Chrono circulaire bleu ──
+function TimerRing({ size, value, total, paused }: { size: number; value: number; total: number; paused: boolean }) {
+  const c = size / 2;
+  const r = c - 7;
+  const path = useMemo(() => Skia.Path.MakeFromSVGString(`M ${c} ${c - r} A ${r} ${r} 0 1 1 ${c} ${c + r} A ${r} ${r} 0 1 1 ${c} ${c - r} Z`)!, [c, r]);
+  const p = Math.max(0, Math.min(1, value / total));
+  const urgent = !paused && value <= 5;
+  const color = urgent ? '#FF5A6E' : BLUE;
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Canvas style={StyleSheet.absoluteFill}>
+        <Circle cx={c} cy={c} r={r} color="rgba(10,12,40,0.9)" />
+        <Circle cx={c} cy={c} r={r} style="stroke" strokeWidth={5} color="rgba(91,124,255,0.18)" />
+        <Path path={path} start={0} end={p} style="stroke" strokeWidth={7} strokeCap="round" color={color} opacity={0.7}>
+          <BlurMask blur={6} style="solid" />
+        </Path>
+        <Path path={path} start={0} end={p} style="stroke" strokeWidth={3.5} strokeCap="round" color={urgent ? '#FFB3BC' : '#BFD0FF'} />
+      </Canvas>
+      <Text style={[styles.ringNum, urgent && { color: '#FF8A97' }]}>
+        {Math.ceil(value)}
+        <Text style={{ fontSize: 15 }}>s</Text>
+      </Text>
+      {paused && <Ionicons name="pause" size={11} color={GOLD} style={{ position: 'absolute', bottom: 12 }} />}
+    </View>
+  );
+}
+
+function IntroText({ round, kind }: { round: number; kind: 'L' | 'C' }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     v.setValue(0);
-    Animated.timing(v, { toValue: 1, duration: 500, easing: Easing.out(Easing.back(1.6)), useNativeDriver: true }).start();
+    Animated.timing(v, { toValue: 1, duration: 450, easing: Easing.out(Easing.back(1.6)), useNativeDriver: true }).start();
   }, [round, v]);
   return (
-    <Animated.View style={[styles.intro, { opacity: v, transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }] }]}>
-      <Text style={styles.introSmall}>MANCHE {round + 1} / {ROUNDS.length}</Text>
+    <Animated.View style={{ minHeight: 102, justifyContent: 'center', opacity: v, transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }] }}>
+      <Text style={styles.introSmall}>MANCHE {round + 1}</Text>
       <Text style={styles.introBig}>{kind === 'L' ? 'Le mot le plus long' : 'Le compte est bon'}</Text>
-      <Text style={styles.introSub}>
-        {kind === 'L'
-          ? `10 lettres · ${DURATION.L} secondes\nUn point par lettre si le mot existe`
-          : `6 plaques · ${DURATION.C} secondes\n10 points si c'est exact, 7 pour le plus proche`}
-      </Text>
-      <Text style={styles.introNote}>Les réponses restent cachées. Le chrono s'arrête quand les 4 ont répondu.</Text>
+      <Text style={styles.introSub}>{kind === 'L' ? `10 lettres · ${DURATION.L} s · 1 point par lettre` : `6 plaques · ${DURATION.C} s · 10 pts si exact`}</Text>
     </Animated.View>
   );
 }
 
-function Final({ ranking, onReplay, onClose }: { ranking: Player[]; onReplay: () => void; onClose: () => void }) {
+function Final({ ranking, onReplay, onClose, top }: { ranking: Player[]; onReplay: () => void; onClose: () => void; top: number }) {
   const out = ranking[ranking.length - 1];
   const win = ranking[0];
   useEffect(() => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
   return (
-    <ScrollView contentContainerStyle={{ paddingTop: 10, paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
-      <Text style={styles.finalTitle}>{win.me ? 'Tu as gagné ! 👑' : `${win.name} gagne la partie 👑`}</Text>
-      {ranking.map((p, i) => (
-        <View key={p.id} style={[styles.rankRow, i === 0 && styles.rankWin, i === ranking.length - 1 && styles.rankOut]}>
-          <Text style={styles.rankPos}>{i === 0 ? '👑' : i + 1}</Text>
-          <Image source={p.photo} style={styles.revealAv} />
-          <Text style={[styles.revealName, { flex: 1 }]}>{p.me ? 'Toi' : p.name}</Text>
-          <Text style={styles.rankScore}>{p.score} pts</Text>
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,4,20,0.72)', zIndex: 30 }]}>
+      <ScrollView contentContainerStyle={{ paddingTop: top, paddingHorizontal: 16, paddingBottom: 40 }}>
+        <View style={styles.finalCard}>
+          <Text style={styles.finalTitle}>{win.me ? 'Tu gagnes la partie ! 👑' : `${win.name} gagne la partie 👑`}</Text>
+          <Text style={styles.finalSub}>{win.me ? 'Tu remportes les 500 Zems 🏆' : `${win.name} remporte les 500 Zems 🏆`}</Text>
+          {ranking.map((p, i) => (
+            <View key={p.id} style={[styles.rankRow, i === 0 && styles.rankWin, i === ranking.length - 1 && { opacity: 0.6 }]}>
+              <Text style={styles.rankPos}>{i === 0 ? '👑' : i + 1}</Text>
+              <Image source={p.photo} style={styles.rankAv} />
+              <Text style={styles.rankName}>{p.me ? 'Toi' : p.name}</Text>
+              <Text style={styles.rankScore}>{p.score} pts</Text>
+            </View>
+          ))}
+          <Text style={styles.outText}>
+            ⬇ {out.me ? 'Tu descends de la scène… Remets-toi dans la file pour retenter ta chance.' : `${out.name} descend de la scène. Un challenger de la file monte.`}
+          </Text>
+          <Pressable onPress={onReplay}>
+            <LinearGradient colors={goldGradient} style={styles.replay}>
+              <Ionicons name="refresh" size={18} color={INK} />
+              <Text style={styles.replayText}>Rejouer</Text>
+            </LinearGradient>
+          </Pressable>
+          <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
+            <Text style={styles.quitText}>Quitter le live</Text>
+          </Pressable>
         </View>
-      ))}
-      <View style={styles.outBox}>
-        <Text style={styles.outText}>
-          ⬇ {out.me ? 'Tu descends de la scène… Remets-toi dans la file pour retenter ta chance.' : `${out.name} descend de la scène.`}
-        </Text>
-        <Text style={styles.outSub}>Un nouveau challenger de la file monte pour la prochaine partie.</Text>
-      </View>
-      <Pressable onPress={onReplay}>
-        <LinearGradient colors={goldGradient} style={styles.replay}>
-          <Ionicons name="refresh" size={18} color="#1D1405" />
-          <Text style={styles.replayText}>Rejouer</Text>
-        </LinearGradient>
-      </Pressable>
-      <Pressable onPress={onClose} style={styles.quit}>
-        <Text style={styles.quitText}>Quitter le live</Text>
-      </Pressable>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
-function ActionBtn({ icon, label, onPress, disabled }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; disabled?: boolean }) {
+function SubmitBtn({ done, onPress, small }: { done: boolean; onPress: () => void; small?: boolean }) {
   return (
-    <Pressable onPress={onPress} disabled={disabled} style={[styles.action, disabled && { opacity: 0.4 }]}>
-      <Ionicons name={icon} size={17} color={colors.text} />
-      <Text style={styles.actionText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function SubmitBtn({ done, onPress }: { done: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} disabled={done} style={{ flex: 1.4 }}>
+    <Pressable onPress={onPress} disabled={done} style={small ? { flex: 1 } : { width: 104 }}>
       <LinearGradient colors={done ? ['#3A2E18', '#2A2010'] : goldGradient} style={styles.submit}>
-        <Ionicons name={done ? 'lock-closed' : 'checkmark'} size={17} color={done ? GOLD : '#1D1405'} />
+        <Ionicons name={done ? 'lock-closed' : 'checkmark'} size={16} color={done ? GOLD : INK} />
         <Text style={[styles.submitText, done && { color: GOLD }]}>{done ? 'Envoyé' : 'Valider'}</Text>
       </LinearGradient>
     </Pressable>
   );
 }
 
+function RoundGold({ children, onPress }: { children: React.ReactNode; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress}>
+      <LinearGradient colors={['#FFE89A', '#D9A43A', '#8E5C0E']} style={styles.roundGold}>
+        <View style={styles.roundGoldInner}>{children}</View>
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
+const glow = { shadowColor: '#FFB347', shadowOpacity: 0.7, shadowRadius: 10, shadowOffset: { width: 0, height: 0 } };
+const purpleGlow = { shadowColor: PURPLE, shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } };
+
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
-  logo: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  logoText: { color: '#1D1405', fontWeight: '900', fontSize: 15 },
-  brand: { color: colors.text, fontSize: 16, fontWeight: '900' },
-  brandSub: { color: colors.textDim, fontSize: 11, marginTop: 1 },
-  viewers: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.5)' },
-  viewersText: { color: colors.text, fontSize: 11, fontWeight: '800' },
-  close: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
-
-  players: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, marginTop: 4 },
-  player: {
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(247,241,225,0.08)',
-  },
-  playerMe: { borderColor: 'rgba(212,175,55,0.6)', backgroundColor: 'rgba(212,175,55,0.08)' },
-  playerAv: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: colors.gold },
-  crown: { position: 'absolute', top: -12, alignSelf: 'center', fontSize: 15 },
-  playerName: { color: colors.text, fontSize: 12, fontWeight: '800', marginTop: 5, maxWidth: '90%' },
-  playerScore: { color: GOLD, fontSize: 12, fontWeight: '900', marginTop: 1 },
-  status: { marginTop: 5, paddingHorizontal: 6, height: 18, borderRadius: 9, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)' },
-  statusOn: { backgroundColor: GOLD },
-  statusText: { color: colors.textDim, fontSize: 9.5, fontWeight: '800' },
-
-  roundBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, marginTop: 12 },
-  roundChips: { flex: 1, flexDirection: 'row', gap: 6 },
-  roundChip: { paddingHorizontal: 9, height: 24, borderRadius: 12, justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(212,175,55,0.3)' },
-  roundChipOn: { backgroundColor: GOLD, borderColor: GOLD },
-  roundChipDone: { opacity: 0.45 },
-  roundChipText: { color: colors.textDim, fontSize: 11, fontWeight: '800' },
-  timer: { color: colors.text, fontSize: 24, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  timeTrack: { height: 4, borderRadius: 2, marginHorizontal: 12, marginTop: 6, marginBottom: 10, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' },
-  timeFill: { height: 4, backgroundColor: GOLD },
-
-  hint: { color: colors.textDim, fontSize: 12.5, textAlign: 'center', marginBottom: 10 },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
-  tile: { borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  tileEmpty: { borderWidth: 1, borderColor: 'rgba(212,175,55,0.25)', backgroundColor: 'rgba(255,255,255,0.04)' },
-  tileText: { color: '#1D1405', fontSize: 26, fontWeight: '900' },
-  answerRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  // en-tête
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
+  roundBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    minHeight: 58,
-    marginTop: 14,
-    padding: 8,
-    borderRadius: 16,
+    backgroundColor: 'rgba(10,10,40,0.55)',
     borderWidth: 1,
-    borderColor: 'rgba(212,175,55,0.45)',
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderColor: 'rgba(255,255,255,0.35)',
   },
-  answerPh: { color: colors.textFaint, fontSize: 13, textAlign: 'center' },
-  answerTile: { width: 28, height: 38, borderRadius: 8, backgroundColor: 'rgba(243,210,122,0.16)', alignItems: 'center', justifyContent: 'center' },
-  answerTileText: { color: GOLD, fontSize: 20, fontWeight: '900' },
-  answerLen: { color: colors.textDim, fontSize: 12, fontWeight: '800', marginLeft: 4 },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  action: {
+  zLogo: { width: 40, height: 40, borderRadius: 20, padding: 2, marginLeft: 8 },
+  zInner: { flex: 1, borderRadius: 18, backgroundColor: '#130E2E', alignItems: 'center', justifyContent: 'center' },
+  zText: { color: GOLD, fontSize: 22, fontWeight: '900', fontFamily: 'Georgia' },
+  appTitle: { color: '#fff', fontSize: 20, fontWeight: '900', fontFamily: 'Georgia', letterSpacing: 0.5 },
+  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
+  liveBadge: { backgroundColor: '#FF2D55', paddingHorizontal: 9, height: 20, borderRadius: 6, justifyContent: 'center' },
+  liveText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  viewers: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  viewersText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+
+  // emblème
+  crown: { position: 'absolute', top: -4, fontSize: 24 },
+  zemboPill: { marginTop: -26, paddingHorizontal: 22, height: 28, borderRadius: 14, justifyContent: 'center', borderWidth: 1, borderColor: '#FFF3C4', ...glow },
+  zemboPillText: { color: INK, fontSize: 17, fontWeight: '900', fontFamily: 'Georgia', letterSpacing: 2 },
+  champion: { position: 'absolute', right: 8, top: 4, alignItems: 'center' },
+  championBox: {
+    marginTop: -4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: GOLD2,
+    backgroundColor: 'rgba(12,10,40,0.8)',
+    alignItems: 'center',
+  },
+  championTitle: { color: GOLD, fontSize: 10, fontWeight: '800' },
+  championPrize: { color: '#fff', fontSize: 10, fontWeight: '800' },
+
+  // manche
+  mancheRow: { alignItems: 'center', marginTop: 6 },
+  manche: { flexDirection: 'row', alignItems: 'center', height: 30, borderRadius: 15, borderWidth: 1.5, borderColor: GOLD2, backgroundColor: 'rgba(10,10,40,0.8)', overflow: 'hidden' },
+  mancheLabel: { paddingHorizontal: 14, height: '100%', justifyContent: 'center', borderRightWidth: 1.5, borderRightColor: GOLD2, borderRadius: 15 },
+  mancheText: { color: '#fff', fontSize: 13.5, fontWeight: '900' },
+  dots: { flexDirection: 'row', gap: 7, paddingHorizontal: 14 },
+  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.3)' },
+
+  // plateau
+  boardWrap: { paddingHorizontal: 12, marginTop: 18 },
+  board: { borderRadius: 22, borderWidth: 2, borderColor: GOLD2, backgroundColor: NAVY, paddingHorizontal: 12, paddingTop: 14, paddingBottom: 12, ...glow },
+  boardLabelWrap: { position: 'absolute', top: -16, left: 0, right: 0, alignItems: 'center' },
+  boardLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingLeft: 6,
+    paddingRight: 16,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: PURPLE,
+    backgroundColor: '#15114A',
+    ...purpleGlow,
+  },
+  boardLabelIcon: { width: 22, height: 22, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  boardLabelIconText: { color: INK, fontSize: 10.5, fontWeight: '900' },
+  boardLabelText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 0.5 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tile: { borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,240,190,0.6)' },
+  tileEmpty: { borderWidth: 1, borderColor: 'rgba(233,185,73,0.35)', backgroundColor: 'rgba(255,255,255,0.04)' },
+  tileText: { color: INK, fontWeight: '900' },
+  targetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 6 },
+  targetLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
+  target: { color: GOLD, fontSize: 34, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  plaques: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, minHeight: 80 },
+  plaque: { height: 37, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1.5, borderColor: 'rgba(233,185,73,0.5)' },
+  plaqueMade: { backgroundColor: GOLD, borderColor: GOLD },
+  plaqueSel: { borderColor: '#fff', borderWidth: 2.5 },
+  plaqueText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  ringNum: { color: GOLD, fontSize: 28, fontWeight: '900' },
+  hint: { color: 'rgba(255,255,255,0.85)', fontSize: 13.5, textAlign: 'center' },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  strip: {
+    flex: 1,
+    height: 42,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.7)',
+    backgroundColor: 'rgba(25,20,80,0.7)',
+  },
+  stripPh: { color: 'rgba(255,255,255,0.75)', fontSize: 12.5 },
+  stripLetter: { color: GOLD, fontSize: 19, fontWeight: '900', paddingHorizontal: 1 },
+  stripLen: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '800', marginLeft: 4 },
+  iconBtn: { width: 40, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' },
+  submit: { height: 42, borderRadius: 12, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center' },
+  submitText: { color: INK, fontSize: 14, fontWeight: '900' },
+  op: { width: 40, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(233,185,73,0.45)' },
+  opOn: { backgroundColor: GOLD, borderColor: GOLD },
+  opText: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  myCount: { color: GOLD, fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 6 },
+  revealLine: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 42 },
+  revealMsg: { color: '#fff', fontSize: 13, fontWeight: '700', lineHeight: 17 },
+  nextBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: GOLD },
+  nextText: { color: INK, fontSize: 13, fontWeight: '900' },
+  introSmall: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '900', letterSpacing: 2 },
+  introBig: { color: GOLD, fontSize: 22, fontWeight: '900', marginTop: 4, fontFamily: 'Georgia' },
+  introSub: { color: '#fff', fontSize: 12.5, marginTop: 6 },
+
+  // caméras
+  players: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, marginTop: 14 },
+  cam: { borderRadius: 16, overflow: 'hidden', borderWidth: 2, borderColor: '#9B6BFF', backgroundColor: '#15114A' },
+  camMe: { borderColor: GOLD2 },
+  camFlash: { borderColor: GOLD, borderWidth: 3 },
+  camCrown: { position: 'absolute', top: 3, left: 5, fontSize: 22 },
+  camDot: { position: 'absolute', top: 8, right: 8, width: 10, height: 10, borderRadius: 5, backgroundColor: '#35D07F', borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.4)' },
+  camBottom: { position: 'absolute', left: 0, right: 0, bottom: 7, alignItems: 'center' },
+  camName: { color: '#fff', fontSize: 14, fontWeight: '900', maxWidth: '92%' },
+  ptsPill: { marginTop: 4, paddingHorizontal: 12, height: 24, borderRadius: 12, justifyContent: 'center' },
+  ptsText: { color: INK, fontSize: 15, fontWeight: '900' },
+
+  // réponses cachées
+  answersWrap: { paddingHorizontal: 12, marginTop: 20 },
+  answers: { borderRadius: 20, borderWidth: 2, borderColor: GOLD2, backgroundColor: NAVY, paddingTop: 18, paddingBottom: 10, paddingHorizontal: 4, ...glow },
+  answersLabelWrap: { position: 'absolute', top: -15, left: 0, right: 0, alignItems: 'center' },
+  answersLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: PURPLE,
+    backgroundColor: '#15114A',
+    ...purpleGlow,
+  },
+  answersLabelText: { color: '#fff', fontSize: 14, fontWeight: '900' },
+  slots: { flexDirection: 'row', justifyContent: 'space-around' },
+  slot: {
+    height: 50,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(110,130,255,0.45)',
+    backgroundColor: 'rgba(20,28,90,0.75)',
+    paddingHorizontal: 4,
+  },
+  slotDone: { borderColor: GOLD2 },
+  slotWin: { borderColor: GOLD, backgroundColor: 'rgba(233,185,73,0.2)' },
+  slotDots: { color: '#fff', fontSize: 12, fontWeight: '900', letterSpacing: 2, marginTop: 1 },
+  slotAnswer: { color: GOLD, fontSize: 15, fontWeight: '900', letterSpacing: 0.5 },
+  slotBad: { color: '#FF8A8A', textDecorationLine: 'line-through' },
+  slotPts: { color: '#fff', fontSize: 11, fontWeight: '800', marginTop: 1 },
+
+  // chat
+  chatWrap: { flex: 1, paddingHorizontal: 12, marginTop: 10, marginBottom: 8 },
+  chat: {
+    flex: 1,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(14,16,52,0.75)',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  msg: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 24 },
+  msgAv: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: GOLD2 },
+  msgName: { color: '#fff', fontSize: 13, fontWeight: '900', maxWidth: 70 },
+  msgText: { flex: 1, color: 'rgba(255,255,255,0.92)', fontSize: 12.5, marginRight: 40 },
+  likeBubble: { position: 'absolute', right: 22, bottom: 8, width: 34, height: 34, borderRadius: 17, backgroundColor: '#2D6BFF', alignItems: 'center', justifyContent: 'center' },
+
+  // barre du bas
+  bottomBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 2 },
+  comment: {
     flex: 1,
     height: 46,
     borderRadius: 23,
     flexDirection: 'row',
-    gap: 6,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    gap: 8,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(10,10,40,0.6)',
   },
-  actionText: { color: colors.text, fontSize: 13, fontWeight: '800' },
-  submit: { height: 46, borderRadius: 23, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
-  submitText: { color: '#1D1405', fontSize: 14.5, fontWeight: '900' },
+  commentInput: { flex: 1, color: '#fff', fontSize: 14 },
+  roundGold: { width: 46, height: 46, borderRadius: 23, padding: 2 },
+  roundGoldInner: { flex: 1, borderRadius: 21, backgroundColor: '#130E2E', alignItems: 'center', justifyContent: 'center' },
 
-  targetBox: { alignSelf: 'center', alignItems: 'center', paddingHorizontal: 26, paddingVertical: 6, borderRadius: 18, borderWidth: 1.5, borderColor: GOLD, backgroundColor: 'rgba(0,0,0,0.45)', marginBottom: 10 },
-  targetLabel: { color: colors.textDim, fontSize: 9.5, fontWeight: '900', letterSpacing: 1.4 },
-  target: { color: GOLD, fontSize: 40, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  plaques: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, minHeight: 104 },
-  plaque: {
-    width: 76,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(212,175,55,0.35)',
-  },
-  plaqueMade: { backgroundColor: GOLD, borderColor: GOLD },
-  plaqueSel: { borderColor: '#FFFFFF', borderWidth: 2.5, transform: [{ scale: 1.06 }] },
-  plaqueText: { color: colors.text, fontSize: 21, fontWeight: '900' },
-  ops: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 12 },
-  op: { width: 54, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(212,175,55,0.3)' },
-  opOn: { backgroundColor: GOLD, borderColor: GOLD },
-  opText: { color: colors.text, fontSize: 22, fontWeight: '900' },
-  calc: { marginTop: 10, minHeight: 52, padding: 8, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.4)', borderWidth: 1, borderColor: 'rgba(212,175,55,0.3)', justifyContent: 'center' },
-  calcText: { color: colors.text, fontSize: 12.5, textAlign: 'center' },
-  calcMine: { color: GOLD, fontSize: 13, fontWeight: '900', textAlign: 'center', marginTop: 3 },
-
-  stopped: { color: GOLD, fontSize: 14, fontWeight: '900', textAlign: 'center' },
-  drawRecap: { color: colors.textDim, fontSize: 13, fontWeight: '800', textAlign: 'center', letterSpacing: 1.5, marginTop: 4, marginBottom: 10 },
-  revealRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', marginBottom: 7 },
-  revealRowWin: { backgroundColor: 'rgba(212,175,55,0.14)', borderWidth: 1, borderColor: 'rgba(212,175,55,0.5)' },
-  revealAv: { width: 38, height: 38, borderRadius: 19 },
-  revealName: { color: colors.text, fontSize: 13.5, fontWeight: '800' },
-  revealAnswer: { color: GOLD, fontSize: 19, fontWeight: '900', letterSpacing: 1.5, marginTop: 1 },
-  revealBad: { color: '#FF8A8A', textDecorationLine: 'line-through' },
-  revealSteps: { color: colors.textDim, fontSize: 10.5, marginTop: 2 },
-  revealHidden: { color: colors.textFaint, fontSize: 13, marginTop: 2 },
-  revealPts: { color: GOLD, fontSize: 18, fontWeight: '900' },
-  revealNote: { color: colors.textDim, fontSize: 10.5, fontWeight: '700', marginTop: 1 },
-  best: { marginTop: 6, padding: 12, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.45)', borderWidth: 1, borderColor: 'rgba(212,175,55,0.35)' },
-  bestText: { color: colors.text, fontSize: 13, lineHeight: 19 },
-  nextBtn: { alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10, paddingHorizontal: 14, height: 34, borderRadius: 17, backgroundColor: GOLD },
-  nextText: { color: '#1D1405', fontSize: 12.5, fontWeight: '900' },
-
-  intro: { alignItems: 'center', paddingTop: 30, paddingHorizontal: 16 },
-  introSmall: { color: colors.textDim, fontSize: 12, fontWeight: '900', letterSpacing: 2 },
-  introBig: { color: GOLD, fontSize: 30, fontWeight: '900', textAlign: 'center', marginTop: 8 },
-  introSub: { color: colors.text, fontSize: 15, textAlign: 'center', lineHeight: 22, marginTop: 12 },
-  introNote: { color: colors.textDim, fontSize: 12.5, textAlign: 'center', marginTop: 18 },
-
-  finalTitle: { color: GOLD, fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 14 },
-  rankRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', marginBottom: 7 },
-  rankWin: { backgroundColor: 'rgba(212,175,55,0.16)', borderWidth: 1, borderColor: GOLD },
-  rankOut: { opacity: 0.6 },
-  rankPos: { width: 26, textAlign: 'center', color: colors.text, fontSize: 16, fontWeight: '900' },
+  // fin
+  finalCard: { borderRadius: 22, borderWidth: 2, borderColor: GOLD2, backgroundColor: 'rgba(14,16,52,0.97)', padding: 16, ...glow },
+  finalTitle: { color: GOLD, fontSize: 22, fontWeight: '900', textAlign: 'center', fontFamily: 'Georgia' },
+  finalSub: { color: '#fff', fontSize: 13, textAlign: 'center', marginTop: 4, marginBottom: 12 },
+  rankRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 9, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.06)', marginBottom: 6 },
+  rankWin: { backgroundColor: 'rgba(233,185,73,0.18)', borderWidth: 1, borderColor: GOLD },
+  rankPos: { width: 26, textAlign: 'center', color: '#fff', fontSize: 16, fontWeight: '900' },
+  rankAv: { width: 36, height: 36, borderRadius: 18 },
+  rankName: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '800' },
   rankScore: { color: GOLD, fontSize: 16, fontWeight: '900' },
-  outBox: { marginTop: 8, padding: 12, borderRadius: 16, backgroundColor: 'rgba(255,90,110,0.1)', borderWidth: 1, borderColor: 'rgba(255,90,110,0.35)' },
-  outText: { color: colors.text, fontSize: 13.5, fontWeight: '800' },
-  outSub: { color: colors.textDim, fontSize: 12, marginTop: 4 },
-  replay: { marginTop: 16, height: 50, borderRadius: 25, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center' },
-  replayText: { color: '#1D1405', fontSize: 16, fontWeight: '900' },
-  quit: { alignSelf: 'center', marginTop: 14, padding: 6 },
-  quitText: { color: colors.textDim, fontSize: 13, fontWeight: '800' },
+  outText: { color: 'rgba(255,255,255,0.85)', fontSize: 12.5, marginTop: 6, lineHeight: 18 },
+  replay: { marginTop: 14, height: 48, borderRadius: 24, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center' },
+  replayText: { color: INK, fontSize: 16, fontWeight: '900' },
+  quitText: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '800' },
 });
