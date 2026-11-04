@@ -23,9 +23,9 @@ const LISTS: Record<Tab, Post[]> = { posts: MY_POSTS, private: [], saved: SAVED,
 
 // Onglet Profil de l'utilisatrice connectée
 export function ProfileScreen({ onStartTable }: { onStartTable: () => void }) {
-  const { user, profile } = useSession();
+  const { user, profile, guest } = useSession();
   // pas connecté : invitation à se connecter (comme TikTok)
-  if (!user) return <SignedOut />;
+  if (!user && !guest) return <SignedOut />;
   return <ProfileView onStartTable={onStartTable} name={profile?.prenom || ME.name} handle={profile?.pseudo || ME.handle} />;
 }
 

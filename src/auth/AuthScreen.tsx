@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
-import { authError, normalizePseudo, useSession } from '../lib/session';
+import { TEST_MODE, authError, normalizePseudo, useSession } from '../lib/session';
 
 // Écran Connexion / Inscription du compte Zembo (repris de zembolounge : login.tsx et signup.tsx)
 
@@ -253,6 +253,12 @@ function AuthBody({ reason, onClose }: { reason: string; onClose: () => void }) 
           </Text>
         </Pressable>
 
+        {TEST_MODE && (
+          <Pressable onPress={() => s.enterGuest()} style={styles.guest} hitSlop={6}>
+            <Text style={styles.guestText}>Entrer sans compte (mode test)</Text>
+          </Pressable>
+        )}
+
         {mode === 'signup' && (
           <Text style={styles.legal}>
             En créant un compte, tu acceptes les règles de la communauté Zembo : respect, bienveillance et zéro harcèlement.
@@ -373,5 +379,15 @@ const styles = StyleSheet.create({
   cta: { height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', shadowColor: colors.gold, shadowOpacity: 0.45, shadowRadius: 14 },
   ctaText: { color: '#1D1405', fontSize: 16, fontWeight: '900' },
   switch: { color: colors.textDim, fontSize: 14 },
+  guest: {
+    alignSelf: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  guestText: { color: colors.textDim, fontSize: 13.5, fontWeight: '800' },
   legal: { color: colors.textFaint, fontSize: 11.5, textAlign: 'center', marginTop: 18, lineHeight: 16 },
 });

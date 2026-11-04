@@ -80,7 +80,11 @@ export function WorldProvider({ children }: { children: React.ReactNode }) {
 
   const saveProfile = useCallback(
     async (p: WorldProfile) => {
-      if (!user) throw new Error('non-connecte');
+      if (!user) {
+        // mode test sans compte : profil gardé seulement sur le téléphone
+        setProfile(p);
+        return;
+      }
       const name = p.username.trim();
       await runTransaction(db, async (tx) => {
         const profRef = doc(db, 'worldProfiles', user.uid);

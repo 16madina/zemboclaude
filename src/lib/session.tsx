@@ -24,6 +24,12 @@ export type ZemboProfile = {
   telephone: string;
 };
 
+// MODE TEST : permet d'entrer dans l'app sans compte, pour essayer.
+// À mettre sur false avant la mise en ligne sur l'App Store.
+export const TEST_MODE = true;
+
+const GUEST_PROFILE: ZemboProfile = { uid: 'invite', nom: 'Test', prenom: 'Invité', pseudo: 'invite', email: '', pays: '', telephone: '' };
+
 export type SignUpData = Omit<ZemboProfile, 'uid'> & { password: string };
 
 type Ctx = {
@@ -39,6 +45,9 @@ type Ctx = {
   requireAuth: (reason: string, then?: () => void) => void;
   authPrompt: { reason: string } | null;
   closeAuth: (success: boolean) => void;
+  /** mode test : connecté sans compte */
+  guest: boolean;
+  enterGuest: () => void;
 };
 
 const SessionCtx = createContext<Ctx | null>(null);
@@ -85,6 +94,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authPrompt, setAuthPrompt] = useState<{ reason: string } | null>(null);
   const after = useRef<(() => void) | null>(null);
+  const [guest, setGuest] = useState(false);
+  const guestRef = useRef(false);
 
   useEffect(
     () =>
@@ -145,7 +156,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     await signInWithEmailAndPassword(auth, email.trim(), password);
   }, []);
 
-  const signOut = useCallback(() => fbSignOut(auth), []);
+  const signOut = useCallback(async () => {
+    guestRef.current = false;
+    setGuest(false);
+    if (auth.currentUser) await fbSignOut(auth);
+  }, []);
 
   const resetPassword = useCallback(async (email: string) => {
     await sendPasswordResetEmail(auth, email.trim());
@@ -174,7 +189,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const requireAuth = useCallback((reason: string, then?: () => void) => {
-    if (auth.currentUser) {
+    if (auth.currentUser || guestRef.current) {
       then?.();
       return;
     }
@@ -189,9 +204,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (success && fn) setTimeout(fn, 450);
   }, []);
 
+  const enterGuest = useCallback(() => {
+    guestRef.current = true;
+    setGuest(true);
+    closeAuth(true);
+  }, [closeAuth]);
+
+  const shownProfile = user ? profile : guest ? GUEST_PROFILE : null;
   const value = useMemo<Ctx>(
-    () => ({ user, profile, loading, signUp, signIn, signOut, resetPassword, deleteAccount, requireAuth, authPrompt, closeAuth }),
-    [user, profile, loading, signUp, signIn, signOut, resetPassword, deleteAccount, requireAuth, authPrompt, closeAuth],
+    () => ({ user, profile: shownProfile, loading, signUp, signIn, signOut, resetPassword, deleteAccount, requireAuth, authPrompt, closeAuth, guest, enterGuest }),
+    [user, shownProfile, loading, signUp, signIn, signOut, resetPassword, deleteAccount, requireAuth, authPrompt, closeAuth, guest, enterGuest],
   );
   return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;
 }
