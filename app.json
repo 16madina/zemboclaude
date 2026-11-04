@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Zembo",
-    "slug": "zembo",
+    "slug": "madinadiallo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -38,6 +38,18 @@
     "backgroundColor": "#0A0806",
     "splash": {
       "backgroundColor": "#0A0806"
+    },
+    "owner": "missdee",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/7417e5cc-9668-4402-8bc3-23b72bee1b5a"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7417e5cc-9668-4402-8bc3-23b72bee1b5a"
+      }
     }
   }
 }
