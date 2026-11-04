@@ -119,6 +119,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const [giftOpen, setGiftOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const chatY = useRef(600);
+  const [chatRows, setChatRows] = useState(5); // autant de messages que la place le permet
 
   const [players, setPlayers] = useState<Player[]>(() => [
     {
@@ -681,7 +682,7 @@ function Game({ onClose }: { onClose: () => void }) {
           const r = resultOf(p.id);
           const flash = phase === 'reveal' && revealedIds.includes(p.id) && !!r?.points;
           return (
-            <View key={p.id} style={[styles.cam, { width: card, height: card * 1.75 }, p.me && styles.camMe, flash && styles.camFlash]}>
+            <View key={p.id} style={[styles.cam, { width: card, height: card * 1.4 }, p.me && styles.camMe, flash && styles.camFlash]}>
               <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
               <LinearGradient colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']} locations={[0.45, 0.75, 1]} style={StyleSheet.absoluteFill} />
               {lead && <Text style={styles.camCrown}>👑</Text>}
@@ -741,9 +742,15 @@ function Game({ onClose }: { onClose: () => void }) {
       </View>
 
       {/* ── chat ── */}
-      <View style={styles.chatWrap} onLayout={(e) => (chatY.current = e.nativeEvent.layout.y)}>
+      <View
+        style={styles.chatWrap}
+        onLayout={(e) => {
+          chatY.current = e.nativeEvent.layout.y;
+          setChatRows(Math.max(2, Math.floor((e.nativeEvent.layout.height - 14) / 28)));
+        }}
+      >
         <View style={styles.chat}>
-          {chat.msgs.slice(kind === 'C' ? -4 : -5).map((m) => (
+          {chat.msgs.slice(-chatRows).map((m) => (
             <View key={m.id} style={styles.msg}>
               <Image source={faceOf(m.user, 60)} style={[styles.msgAv, m.me && { borderColor: GOLD, borderWidth: 1.5 }]} />
               <Text style={styles.msgName} numberOfLines={1}>
@@ -1416,7 +1423,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     overflow: 'hidden',
   },
-  msg: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 24 },
+  msg: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 28 },
   msgAv: {
     width: 22,
     height: 22,
@@ -1424,11 +1431,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: GOLD2,
   },
-  msgName: { color: '#fff', fontSize: 13, fontWeight: '900', maxWidth: 70 },
+  msgName: { color: '#fff', fontSize: 13.5, fontWeight: '900', maxWidth: 76 },
   msgText: {
     flex: 1,
     color: 'rgba(255,255,255,0.92)',
-    fontSize: 12.5,
+    fontSize: 13.5,
     marginRight: 40,
   },
   likeBubble: {
