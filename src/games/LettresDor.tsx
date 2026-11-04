@@ -681,7 +681,7 @@ function Game({ onClose }: { onClose: () => void }) {
       {/* ── chat ── */}
       <View style={styles.chatWrap} onLayout={(e) => (chatY.current = e.nativeEvent.layout.y)}>
         <View style={styles.chat}>
-          {chat.msgs.slice(-3).map((m) => (
+          {chat.msgs.slice(kind === 'C' ? -2 : -3).map((m) => (
             <View key={m.id} style={styles.msg}>
               <Image source={faceOf(m.user, 60)} style={[styles.msgAv, m.me && { borderColor: GOLD, borderWidth: 1.5 }]} />
               <Text style={styles.msgName} numberOfLines={1}>
