@@ -5,11 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 
 // Play & Fun : gardé pour plus tard
-export type LoungeKind = 'talk' | 'table' | 'world';
+export type LoungeKind = 'talk' | 'table' | 'world' | 'game';
 
 const OPTIONS: { id: LoungeKind; title: string; desc: string; icon: keyof typeof Ionicons.glyphMap; ready?: boolean }[] = [
   { id: 'table', title: 'Zembo Table', desc: "Un live autour d'une table de 2 à 8 personnes.", icon: 'people-circle', ready: true },
   { id: 'talk', title: 'Talk Show', desc: "Mic d'Or Thérapie ou Micro Ouvert.", icon: 'mic', ready: true },
+  { id: 'game', title: "Lettres d'Or", desc: 'Le jeu des lettres et des chiffres en live, 4 joueurs sur scène.', icon: 'text', ready: true },
   { id: 'world', title: 'World Room', desc: 'Rencontre des gens du monde entier. Le monde est à un Hello.', icon: 'earth', ready: true },
 ];
 

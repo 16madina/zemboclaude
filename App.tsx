@@ -20,6 +20,7 @@ import { TalkShowPicker } from './src/talk/TalkShowPicker';
 import { SlamTherapie } from './src/talk/SlamTherapie';
 import { MicroOuvert } from './src/talk/MicroOuvert';
 import type { TalkFormat } from './src/talk/TalkShowPicker';
+import { LettresDor } from './src/games/LettresDor';
 
 export default function App() {
   return (
@@ -44,6 +45,7 @@ function Main() {
   const [worldOpen, setWorldOpen] = useState(false);
   const [talkOpen, setTalkOpen] = useState(false);
   const [talk, setTalk] = useState<TalkFormat | null>(null);
+  const [gameOpen, setGameOpen] = useState(false);
   // un onglet visité reste monté pour garder sa position et son état
   const [visited, setVisited] = useState<Record<string, boolean>>({ home: true });
   const onUnread = useCallback((n: number) => setInboxBadge(n), []);
@@ -62,7 +64,7 @@ function Main() {
       <View style={styles.root}>
         <View style={styles.content}>
           {/* L'accueil reste monté pour garder la position dans le fil */}
-          <HomeScreen focused={tab === 'home' && !createOpen && !setupOpen && !table && !worldOpen && !talkOpen && !talk} />
+          <HomeScreen focused={tab === 'home' && !createOpen && !setupOpen && !table && !worldOpen && !talkOpen && !talk && !gameOpen} />
           {visited.discover && (
             <View style={page('discover')}>
               <DiscoverScreen />
@@ -87,6 +89,7 @@ function Main() {
           setCreateOpen(false);
           if (kind === 'world') setTimeout(() => setWorldOpen(true), 250);
           else if (kind === 'talk') setTimeout(() => setTalkOpen(true), 350);
+          else if (kind === 'game') setTimeout(() => setGameOpen(true), 350);
           else setTimeout(() => setSetupOpen(true), 350);
         }}
       />
@@ -110,6 +113,7 @@ function Main() {
       />
       <SlamTherapie open={talk === 'slam'} onClose={() => setTalk(null)} />
       <MicroOuvert open={talk === 'open-mic'} onClose={() => setTalk(null)} />
+      <LettresDor open={gameOpen} onClose={() => setGameOpen(false)} />
     </>
   );
 }
