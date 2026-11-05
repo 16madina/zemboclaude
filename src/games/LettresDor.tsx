@@ -682,6 +682,11 @@ function Game({ onClose }: { onClose: () => void }) {
                 <View style={styles.targetRow}>
                   <Text style={styles.targetLabel}>À TROUVER</Text>
                   <Text style={styles.target}>{shown > data.plaques.length || phase !== 'draw' ? data.target : '???'}</Text>
+                  {phase === 'play' && meOnStage && myValue !== null && !mine && (
+                    <Text style={[styles.calcGap, myValue === data.target && { color: GREEN }]}>
+                      {myValue === data.target ? '🎯 Compte bon' : `écart ${Math.abs(myValue - data.target)}`}
+                    </Text>
+                  )}
                 </View>
                 <View style={styles.plaques}>
                   {data.plaques.map((v, i) => {
@@ -696,10 +701,28 @@ function Game({ onClose }: { onClose: () => void }) {
                     );
                   })}
                 </View>
-                {/* tes résultats, en vert */}
-                {phase === 'play' && meOnStage && items.length > 6 && (
-                  <View style={styles.results}>
-                    <Text style={styles.resultsLabel}>Tes résultats</Text>
+                {/* la ligne de calcul (comme une calculatrice) + tes résultats en vert, sur la même ligne */}
+                {phase === 'play' && meOnStage && (
+                  <View style={styles.calcLine}>
+                    <View style={{ flex: 1 }}>
+                      {mine ? (
+                        <Text style={styles.calcHint}>🔒 Compte envoyé, caché</Text>
+                      ) : sel !== null && op !== null ? (
+                        <Text style={styles.calcExpr}>
+                          {items[sel].v} {op} <Text style={styles.calcQ}>?</Text>
+                        </Text>
+                      ) : lastResult ? (
+                        <Text style={styles.calcExpr} numberOfLines={1} adjustsFontSizeToFit>
+                          {steps[steps.length - 1].text.split(' = ')[0]} <Text style={styles.calcEq}>= {items[sel!].v}</Text>
+                        </Text>
+                      ) : sel !== null ? (
+                        <Text style={styles.calcExpr}>
+                          {items[sel].v} <Text style={styles.calcHintInline}>→ + − × ÷</Text>
+                        </Text>
+                      ) : (
+                        <Text style={styles.calcHint}>Touche une plaque pour commencer</Text>
+                      )}
+                    </View>
                     {items.slice(6).map((x, k) => {
                       const i = k + 6;
                       return (
@@ -712,33 +735,6 @@ function Game({ onClose }: { onClose: () => void }) {
                         </FadeIn>
                       );
                     })}
-                  </View>
-                )}
-                {/* la ligne de calcul, comme une calculatrice */}
-                {phase === 'play' && meOnStage && (
-                  <View style={styles.calcLine}>
-                    {mine ? (
-                      <Text style={styles.calcHint}>🔒 Compte envoyé, caché jusqu’à la révélation</Text>
-                    ) : sel !== null && op !== null ? (
-                      <Text style={styles.calcExpr}>
-                        {items[sel].v} {op} <Text style={styles.calcQ}>?</Text>
-                      </Text>
-                    ) : lastResult ? (
-                      <Text style={styles.calcExpr}>
-                        {steps[steps.length - 1].text.split(' = ')[0]} <Text style={styles.calcEq}>= {items[sel!].v}</Text>
-                      </Text>
-                    ) : sel !== null ? (
-                      <Text style={styles.calcExpr}>
-                        {items[sel].v} <Text style={styles.calcHintInline}>→ choisis + − × ÷</Text>
-                      </Text>
-                    ) : (
-                      <Text style={styles.calcHint}>Touche une plaque pour commencer</Text>
-                    )}
-                    {myValue !== null && !mine && (
-                      <Text style={[styles.calcGap, myValue === data.target && { color: GREEN }]}>
-                        {myValue === data.target ? '🎯 Compte bon' : `écart ${Math.abs(myValue - data.target)}`}
-                      </Text>
-                    )}
                   </View>
                 )}
               </View>
@@ -1511,7 +1507,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    marginBottom: 6,
+    height: 34,
+    marginBottom: 4,
   },
   targetLabel: {
     color: 'rgba(255,255,255,0.7)',
@@ -1521,7 +1518,7 @@ const styles = StyleSheet.create({
   },
   target: {
     color: GOLD,
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
@@ -1935,9 +1932,9 @@ const styles = StyleSheet.create({
   results: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 8 },
   resultsLabel: { color: GREEN, fontSize: 10.5, fontWeight: '900', letterSpacing: 0.5, marginRight: 2 },
   resultChip: {
-    minWidth: 56,
-    height: 36,
-    paddingHorizontal: 10,
+    minWidth: 46,
+    height: 28,
+    paddingHorizontal: 8,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1949,15 +1946,16 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 0 },
   },
-  resultText: { color: '#06291B', fontSize: 18, fontWeight: '900' },
+  resultText: { color: '#06291B', fontSize: 15, fontWeight: '900' },
   calcLine: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
-    marginTop: 8,
+    gap: 6,
+    marginTop: 6,
     height: 38,
-    paddingHorizontal: 12,
+    paddingLeft: 12,
+    paddingRight: 5,
     borderRadius: 12,
     backgroundColor: 'rgba(0,0,0,0.35)',
     borderWidth: 1,
@@ -1968,7 +1966,7 @@ const styles = StyleSheet.create({
   calcQ: { color: 'rgba(255,255,255,0.4)' },
   calcHint: { color: 'rgba(255,255,255,0.65)', fontSize: 12.5 },
   calcHintInline: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '700' },
-  calcGap: { color: GOLD, fontSize: 12, fontWeight: '900' },
+  calcGap: { position: 'absolute', right: 2, color: GOLD, fontSize: 12, fontWeight: '900' },
   myTurn: { color: GOLD, fontSize: 14, fontWeight: '900', marginBottom: 6 },
   nextUp: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '700' },
   pickBubble: { position: 'absolute', top: '32%', alignSelf: 'center', paddingHorizontal: 10, height: 26, borderRadius: 13, justifyContent: 'center' },
