@@ -168,7 +168,8 @@ function Game({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState('');
   const inputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   const chatY = useRef(600);
-  const [chatH, setChatH] = useState(160); // hauteur du chat : autant de messages que la place le permet
+  const [chatH, setChatH] = useState(160);
+  const [answersTop, setAnswersTop] = useState(480); // l'appel « Prépare-toi » se pose sur les réponses, pas sur le chat // hauteur du chat : autant de messages que la place le permet
 
   // ── le tournoi ──
   const viewerSeq = useRef(0);
@@ -259,8 +260,7 @@ function Game({ onClose }: { onClose: () => void }) {
     }
     return `✔︎ Ta table a joué${place}`;
   })();
-  const strip = !!(myStatus || nextNote);
-  const chatRows = Math.max(2, Math.floor((chatH - 14 - (strip ? 34 : 0)) / 28));
+  const chatRows = Math.max(2, Math.floor((chatH - 8) / 28));
 
   // ── des spectateurs demandent à monter de temps en temps ──
   useEffect(() => {
@@ -1040,13 +1040,8 @@ function Game({ onClose }: { onClose: () => void }) {
 
               {phase === 'draw' && <Text style={styles.hint}>Tirage des plaques…</Text>}
 
-              {phase === 'play' && !meOnStage && <Text style={styles.hint}>
-                  {group
-                    ? isFinal
-                      ? 'Tu regardes la grande finale. Touche 📊 pour voir le classement.'
-                      : 'Tu regardes. Ta table passera bientôt. Touche 📊 pour voir le classement.'
-                    : 'Tu regardes. Touche 🙋 en bas pour demander à monter sur scène.'}
-                </Text>}
+              {phase === 'play' && !meOnStage && !group && <Text style={styles.hint}>Tu regardes. Touche 🙋 en bas pour demander à monter sur scène.</Text>}
+              {phase === 'play' && !meOnStage && group && <LeagueInfo status={myStatus} next={nextTable} note={nextNote} onPress={() => setQueueOpen(true)} />}
 
               {phase === 'play' && meOnStage && data?.kind === 'L' && (
                 <View style={styles.inputRow}>
@@ -1170,7 +1165,7 @@ function Game({ onClose }: { onClose: () => void }) {
       </View>
 
       {/* ── réponses cachées ── */}
-      <View style={styles.answersWrap}>
+      <View style={styles.answersWrap} onLayout={(e) => setAnswersTop(e.nativeEvent.layout.y)}>
         <View style={styles.answers}>
           <View style={styles.answersLabelWrap} pointerEvents="none">
             <View style={styles.answersLabel}>
@@ -1216,27 +1211,6 @@ function Game({ onClose }: { onClose: () => void }) {
         }}
       >
         <View style={styles.chat}>
-          {strip && (
-            <View style={styles.lgStrip}>
-              {myStatus ? (
-                <View style={styles.lgMePill}>
-                  <Text style={styles.lgMe} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-                    {myStatus}
-                  </Text>
-                </View>
-              ) : (
-                <View style={{ flex: 1 }} />
-              )}
-              {nextNote && (
-                <Pressable onPress={() => setQueueOpen(true)} style={styles.lgNext} hitSlop={6}>
-                  <Text style={styles.lgNextText}>{nextNote}</Text>
-                  {nextTable?.map((p, i) => (
-                    <Image key={p.id} source={p.photo} style={[styles.lgNextAv, i > 0 && { marginLeft: -8 }, p.me && { borderColor: GOLD }]} />
-                  ))}
-                </Pressable>
-              )}
-            </View>
-          )}
           {chat.msgs.slice(-chatRows).map((m) => {
             const mention = m.text.match(/^@\S+/)?.[0];
             return (
@@ -1334,23 +1308,29 @@ function Game({ onClose }: { onClose: () => void }) {
       {phase === 'tableEnd' && tableEnd && <TableEndCard t={tableEnd} general={general} top={T + 80} />}
       {phase === 'leagueEnd' && champ && <LeagueEndCard c={champ} general={general} top={T + 80} onRelaunch={() => setPhase('size')} onClose={onClose} />}
       {callUp && (
-        <FadeIn style={[styles.callCard, { bottom: Math.max(insets.bottom - 6, 10) + 56 }]}>
+        <FadeIn style={[styles.callCard, { top: answersTop - 8 }]}>
           <View style={styles.callCam}>
             <Image source={DEENA_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
             <View style={styles.camDot} />
-            <Text style={styles.callCamText}>📷 Ta caméra</Text>
+            <Text style={styles.callCamText}>📷</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.callTitle}>Prépare-toi ! 🎤</Text>
-            <Text style={styles.callSub}>{phase === 'tableEnd' ? 'Ta table monte sur scène maintenant.' : 'Ta table monte après cette épreuve.'} Vérifie ta caméra.</Text>
-            <Pressable onPress={confirmReady}>
-              <LinearGradient colors={goldGradient} style={styles.callBtn}>
-                <Text style={styles.callBtnText}>Je suis prêt ✅ · {callLeft}s</Text>
-              </LinearGradient>
-            </Pressable>
-            <Pressable onPress={skipTable} hitSlop={6}>
-              <Text style={styles.callSkip}>Je ne peux pas jouer cette table</Text>
-            </Pressable>
+            <Text style={styles.callTitle} numberOfLines={1}>
+              Prépare-toi ! 🎤
+            </Text>
+            <Text style={styles.callSub} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+              {phase === 'tableEnd' ? 'Ta table monte maintenant !' : 'Ta table monte après cette épreuve.'}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 7 }}>
+              <Pressable onPress={confirmReady} style={{ flex: 1 }}>
+                <LinearGradient colors={goldGradient} style={styles.callBtn}>
+                  <Text style={styles.callBtnText}>Je suis prêt ✅ · {callLeft}s</Text>
+                </LinearGradient>
+              </Pressable>
+              <Pressable onPress={skipTable} hitSlop={8}>
+                <Text style={styles.callSkip}>Passer</Text>
+              </Pressable>
+            </View>
           </View>
         </FadeIn>
       )}
@@ -1364,6 +1344,11 @@ function Game({ onClose }: { onClose: () => void }) {
         title="Classement général"
         subtitle={isFinal ? 'Grande finale en cours' : `Ronde ${ronde}/${rondes} · 1er 4 pts, 2e 3, 3e 2, 4e 1`}
       >
+        {(myStatus || nextNote) && (
+          <View style={{ marginBottom: 10 }}>
+            <LeagueInfo status={myStatus} next={nextTable} note={nextNote} />
+          </View>
+        )}
         <ScrollView style={{ maxHeight: 420 }}>
           {general.length === 0 ? (
             <Text style={styles.queueEmpty}>Le classement apparaît quand le championnat commence.</Text>
@@ -1571,6 +1556,32 @@ function ModePicker({ top, onTournament, onGroup, onClose }: { top: number; onTo
         <Text style={styles.quitText}>Annuler</Text>
       </Pressable>
     </Cover>
+  );
+}
+
+// ── Championnat : ta place et la table qui monte ensuite ──
+function LeagueInfo({ status, next, note, onPress }: { status: string | null; next: Player[] | null; note: string | null; onPress?: () => void }) {
+  return (
+    <Pressable onPress={onPress} disabled={!onPress}>
+      {!!status && (
+        <Text style={styles.lgMe} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {status}
+        </Text>
+      )}
+      {!!note && (
+        <View style={styles.lgNext}>
+          <Text style={styles.lgNextText}>{note}</Text>
+          {next?.map((p, i) => (
+            <Image key={p.id} source={p.photo} style={[styles.lgNextAv, i > 0 && { marginLeft: -7 }, p.me && { borderColor: GOLD }]} />
+          ))}
+          {!!next && (
+            <Text style={styles.lgNextNames} numberOfLines={1}>
+              {next.map(nameOf).join(', ')}
+            </Text>
+          )}
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -2445,52 +2456,33 @@ const styles = StyleSheet.create({
   soon: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '800' },
 
   // championnat
-  lgStrip: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 30, marginBottom: 4 },
-  lgMePill: {
-    flex: 1,
-    height: 30,
-    borderRadius: 15,
-    paddingHorizontal: 10,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(233,185,73,0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(233,185,73,0.7)',
-  },
-  lgMe: { color: '#FFE7A8', fontSize: 12.5, fontWeight: '900' },
-  lgNext: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 30,
-    paddingLeft: 10,
-    paddingRight: 4,
-    borderRadius: 15,
-    backgroundColor: 'rgba(21,17,74,0.92)',
-    borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.8)',
-  },
-  lgNextText: { color: '#C9B8FF', fontSize: 11.5, fontWeight: '900', marginRight: 6 },
+  lgMe: { color: '#FFE7A8', fontSize: 13.5, fontWeight: '900' },
+  lgNext: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  lgNextText: { color: '#C9B8FF', fontSize: 12, fontWeight: '900', marginRight: 6 },
   lgNextAv: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#15114A' },
+  lgNextNames: { flex: 1, color: 'rgba(255,255,255,0.7)', fontSize: 11.5, fontWeight: '700', marginLeft: 6 },
   callCard: {
     position: 'absolute',
     left: 12,
     right: 12,
     zIndex: 40,
     flexDirection: 'row',
-    gap: 12,
-    padding: 12,
-    borderRadius: 20,
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 18,
     borderWidth: 2,
     borderColor: GOLD,
     backgroundColor: 'rgba(14,16,52,0.98)',
     ...glow,
   },
-  callCam: { width: 86, height: 124, borderRadius: 14, overflow: 'hidden', borderWidth: 2, borderColor: GOLD2, backgroundColor: '#15114A' },
-  callCamText: { position: 'absolute', bottom: 5, alignSelf: 'center', color: '#fff', fontSize: 10.5, fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.9)', textShadowRadius: 3 },
-  callTitle: { color: GOLD, fontSize: 19, fontWeight: '900', fontFamily: 'Georgia' },
-  callSub: { color: '#fff', fontSize: 12.5, marginTop: 3, lineHeight: 17 },
-  callBtn: { marginTop: 9, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  callBtnText: { color: INK, fontSize: 14.5, fontWeight: '900' },
-  callSkip: { color: 'rgba(255,255,255,0.65)', fontSize: 11.5, fontWeight: '800', textAlign: 'center', marginTop: 8 },
+  callCam: { width: 56, height: 76, borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: GOLD2, backgroundColor: '#15114A' },
+  callCamText: { position: 'absolute', bottom: 3, alignSelf: 'center', fontSize: 12 },
+  callTitle: { color: GOLD, fontSize: 17, fontWeight: '900', fontFamily: 'Georgia' },
+  callSub: { color: '#fff', fontSize: 12.5, marginTop: 2 },
+  callBtn: { height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  callBtnText: { color: INK, fontSize: 14, fontWeight: '900' },
+  callSkip: { color: 'rgba(255,255,255,0.7)', fontSize: 12.5, fontWeight: '800', textDecorationLine: 'underline' },
   sizeNum: { width: 44, textAlign: 'center', color: GOLD, fontSize: 28, fontWeight: '900', fontFamily: 'Georgia' },
   rulesBox: { marginTop: 4, padding: 12, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)' },
   rulesText: { color: 'rgba(255,255,255,0.8)', fontSize: 12.5, lineHeight: 19 },
