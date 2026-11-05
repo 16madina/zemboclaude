@@ -133,6 +133,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const [giftOpen, setGiftOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const inputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   const chatY = useRef(600);
   const [chatRows, setChatRows] = useState(5); // autant de messages que la place le permet
 
@@ -568,6 +569,12 @@ function Game({ onClose }: { onClose: () => void }) {
     chat.push(profile?.pseudo ?? 'Toi', t, true);
     setDraft('');
   };
+  // toucher le nom de quelqu'un dans le chat pour lui répondre
+  const replyTo = (user: string) => {
+    tap();
+    setDraft(`@${user} `);
+    inputRef.current?.focus();
+  };
 
   // ── mise en page ──
   const n = stage.length;
@@ -620,32 +627,34 @@ function Game({ onClose }: { onClose: () => void }) {
         </Pressable>
       </View>
 
-      {/* ── manche / tour / épreuve ── */}
-      <View style={styles.mancheRow}>
-        <View style={styles.manche}>
-          <View style={styles.mancheLabel}>
-            <Text style={styles.mancheText}>
-              Manche {manche}/{MANCHES}
-            </Text>
-          </View>
-          <Text style={styles.stageText}>{STAGE.label}</Text>
-          <View style={styles.dots}>
-            {STAGE.rounds.map((k, i) => (
-              <View key={i} style={[styles.dot, i <= epreuve && { backgroundColor: k === 'L' ? GOLD2 : GREEN }]} />
-            ))}
-          </View>
-        </View>
-      </View>
-
-      {/* ── le plateau : lettres ou chiffres ── */}
+      {/* ── le plateau : lettres ou chiffres (manche à gauche, tour à droite) ── */}
       <View style={styles.boardWrap}>
         <View style={styles.board}>
           <View style={styles.boardLabelWrap} pointerEvents="none">
+            <View style={styles.sideLeft}>
+              <View style={styles.sidePill}>
+                <Text style={styles.sideText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                  Manche {manche}/{MANCHES}
+                </Text>
+              </View>
+            </View>
             <View style={styles.boardLabel}>
               <LinearGradient colors={goldGradient} style={styles.boardLabelIcon}>
                 <Text style={styles.boardLabelIconText}>{kind === 'L' ? 'Aa' : '12'}</Text>
               </LinearGradient>
               <Text style={styles.boardLabelText}>{kind === 'L' ? 'LES LETTRES' : 'LES CHIFFRES'}</Text>
+            </View>
+            <View style={styles.sideRight}>
+              <View style={styles.sidePill}>
+                <Text style={[styles.sideText, { color: GOLD, flexShrink: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                  {STAGE.label}
+                </Text>
+                <View style={styles.dots}>
+                  {STAGE.rounds.map((k, i) => (
+                    <View key={i} style={[styles.dot, i <= epreuve && { backgroundColor: k === 'L' ? GOLD2 : GREEN }]} />
+                  ))}
+                </View>
+              </View>
             </View>
           </View>
 
@@ -875,7 +884,7 @@ function Game({ onClose }: { onClose: () => void }) {
           const crown = crowns[p.id]?.n ?? 0;
           return (
             <View key={p.id} style={{ width: camW }}>
-              <View style={[styles.cam, { height: card4 * 1.4 }, p.me && styles.camMe, (flash || choosing) && styles.camFlash]}>
+              <View style={[styles.cam, { height: card4 * 1.6 }, p.me && styles.camMe, (flash || choosing) && styles.camFlash]}>
                 <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
                 <LinearGradient colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']} locations={[0.45, 0.75, 1]} style={StyleSheet.absoluteFill} />
                 <View style={styles.camDot} />
@@ -958,17 +967,23 @@ function Game({ onClose }: { onClose: () => void }) {
         }}
       >
         <View style={styles.chat}>
-          {chat.msgs.slice(-chatRows).map((m) => (
-            <View key={m.id} style={styles.msg}>
-              <Image source={faceOf(m.user, 60)} style={[styles.msgAv, m.me && { borderColor: GOLD, borderWidth: 1.5 }]} />
-              <Text style={styles.msgName} numberOfLines={1}>
-                {m.user}
-              </Text>
-              <Text style={styles.msgText} numberOfLines={1}>
-                {m.text}
-              </Text>
-            </View>
-          ))}
+          {chat.msgs.slice(-chatRows).map((m) => {
+            const mention = m.text.match(/^@\S+/)?.[0];
+            return (
+              <View key={m.id} style={styles.msg}>
+                <Pressable onPress={() => !m.me && replyTo(m.user)} disabled={m.me} hitSlop={4} style={styles.msgWho}>
+                  <Image source={faceOf(m.user, 60)} style={[styles.msgAv, m.me && { borderColor: GOLD, borderWidth: 1.5 }]} />
+                  <Text style={[styles.msgName, m.me && { color: GOLD }]} numberOfLines={1}>
+                    {m.user}
+                  </Text>
+                </Pressable>
+                <Text style={styles.msgText} numberOfLines={1}>
+                  {mention ? <Text style={styles.msgMention}>{mention}</Text> : null}
+                  {mention ? m.text.slice(mention.length) : m.text}
+                </Text>
+              </View>
+            );
+          })}
         </View>
         <Pressable onPress={hearts} style={styles.likeBubble}>
           <Ionicons name="thumbs-up" size={18} color="#fff" />
@@ -981,6 +996,7 @@ function Game({ onClose }: { onClose: () => void }) {
           <View style={styles.comment}>
             <Ionicons name="chatbubble-outline" size={18} color="rgba(255,255,255,0.85)" />
             <TextInput
+              ref={inputRef}
               value={draft}
               onChangeText={setDraft}
               placeholder="Écrire un commentaire…"
@@ -990,9 +1006,15 @@ function Game({ onClose }: { onClose: () => void }) {
               returnKeyType="send"
               selectionColor={GOLD}
             />
-            <Pressable onPress={() => setDraft((d) => d + '😊')} hitSlop={6}>
-              <Ionicons name="happy-outline" size={21} color="rgba(255,255,255,0.85)" />
-            </Pressable>
+            {draft.trim() ? (
+              <Pressable onPress={sendComment} hitSlop={6} style={styles.sendBtn}>
+                <Ionicons name="send" size={15} color={INK} />
+              </Pressable>
+            ) : (
+              <Pressable onPress={() => setDraft((d) => d + '😊')} hitSlop={6}>
+                <Ionicons name="happy-outline" size={21} color="rgba(255,255,255,0.85)" />
+              </Pressable>
+            )}
           </View>
           <RoundGold onPress={() => setGiftOpen(true)}>
             <Text style={{ fontSize: 20 }}>🎁</Text>
@@ -1413,37 +1435,32 @@ const styles = StyleSheet.create({
   },
   viewersText: { color: '#fff', fontSize: 11, fontWeight: '800' },
 
-  // manche
-  mancheRow: { alignItems: 'center', marginTop: 12 },
-  manche: {
+  // manche (à gauche) et tour (à droite), posés sur le bord du plateau
+  sideLeft: { flex: 1, alignItems: 'flex-start' },
+  sideRight: { flex: 1, alignItems: 'flex-end' },
+  sidePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 30,
-    borderRadius: 15,
+    gap: 5,
+    maxWidth: '100%',
+    height: 24,
+    paddingHorizontal: 8,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: GOLD2,
-    backgroundColor: 'rgba(10,10,40,0.8)',
-    overflow: 'hidden',
+    backgroundColor: '#15114A',
   },
-  mancheLabel: {
-    paddingHorizontal: 14,
-    height: '100%',
-    justifyContent: 'center',
-    borderRightWidth: 1.5,
-    borderRightColor: GOLD2,
-    borderRadius: 15,
-  },
-  mancheText: { color: '#fff', fontSize: 13.5, fontWeight: '900' },
-  dots: { flexDirection: 'row', gap: 7, paddingHorizontal: 14 },
+  sideText: { color: '#fff', fontSize: 11.5, fontWeight: '900' },
+  dots: { flexDirection: 'row', gap: 3 },
   dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: 'rgba(255,255,255,0.3)',
   },
 
   // plateau
-  boardWrap: { paddingHorizontal: 12, marginTop: 18 },
+  boardWrap: { paddingHorizontal: 12, marginTop: 22 },
   board: {
     borderRadius: 22,
     borderWidth: 2,
@@ -1457,16 +1474,19 @@ const styles = StyleSheet.create({
   boardLabelWrap: {
     position: 'absolute',
     top: -16,
-    left: 0,
-    right: 0,
+    left: 8,
+    right: 8,
+    height: 30,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
   boardLabel: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingLeft: 6,
-    paddingRight: 16,
+    paddingRight: 12,
     height: 30,
     borderRadius: 15,
     borderWidth: 1.5,
@@ -1484,7 +1504,7 @@ const styles = StyleSheet.create({
   boardLabelIconText: { color: INK, fontSize: 10.5, fontWeight: '900' },
   boardLabelText: {
     color: '#fff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
@@ -1507,8 +1527,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    height: 34,
-    marginBottom: 4,
+    height: 42,
+    marginBottom: 6,
   },
   targetLabel: {
     color: 'rgba(255,255,255,0.7)',
@@ -1518,13 +1538,13 @@ const styles = StyleSheet.create({
   },
   target: {
     color: GOLD,
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
-  plaques: { flexDirection: 'row', gap: 5, minHeight: 40 },
+  plaques: { flexDirection: 'row', gap: 5, minHeight: 44 },
   plaque: {
-    height: 40,
+    height: 44,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1534,7 +1554,7 @@ const styles = StyleSheet.create({
   },
   plaqueMade: { backgroundColor: GOLD, borderColor: GOLD },
   plaqueSel: { borderColor: '#fff', borderWidth: 2.5 },
-  plaqueText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  plaqueText: { color: '#fff', fontSize: 20, fontWeight: '900' },
   ringNum: { color: GOLD, fontSize: 28, fontWeight: '900' },
   hint: { color: 'rgba(255,255,255,0.85)', fontSize: 13 },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -1736,16 +1756,15 @@ const styles = StyleSheet.create({
   chatWrap: { flex: 1, paddingHorizontal: 12, marginTop: 10, marginBottom: 8 },
   chat: {
     flex: 1,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(14,16,52,0.75)',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
     justifyContent: 'flex-end',
     overflow: 'hidden',
   },
-  msg: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 28 },
+  msg: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 28 },
+  msgWho: { flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: 120 },
+  msgMention: { color: GOLD, fontWeight: '900' },
+  sendBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: GOLD, alignItems: 'center', justifyContent: 'center', marginRight: -8 },
   msgAv: {
     width: 22,
     height: 22,
@@ -1753,12 +1772,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: GOLD2,
   },
-  msgName: { color: '#fff', fontSize: 13.5, fontWeight: '900', maxWidth: 76 },
+  msgName: { flexShrink: 1, color: '#C9B8FF', fontSize: 13.5, fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 3 },
   msgText: {
     flex: 1,
-    color: 'rgba(255,255,255,0.92)',
+    color: '#fff',
     fontSize: 13.5,
-    marginRight: 40,
+    fontWeight: '600',
+    marginRight: 44,
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowRadius: 3,
   },
   likeBubble: {
     position: 'absolute',
@@ -1868,7 +1890,6 @@ const styles = StyleSheet.create({
   quitText: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '800' },
 
   // tournoi : manche, choix des lettres, couronnes, file
-  stageText: { color: GOLD, fontSize: 12, fontWeight: '900', paddingLeft: 12 },
   vcBtn: { height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   vcText: { color: INK, fontSize: 15, fontWeight: '900' },
   pickNote: { color: 'rgba(255,255,255,0.6)', fontSize: 11.5, fontWeight: '700', marginTop: 3 },
