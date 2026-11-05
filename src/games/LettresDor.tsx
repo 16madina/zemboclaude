@@ -75,6 +75,9 @@ const FINAL_STAGE = { n: 4, label: 'Grande finale', rounds: ['L', 'C', 'L', 'C']
 const GROUP_SIZES = [12, 16, 20];
 const RONDES: Record<number, number> = { 12: 5, 16: 4, 20: 3 }; // environ 15 parties, soit à peu près 1 h
 const TABLE_POINTS = [4, 3, 2, 1];
+const PARTIE_MIN = 3; // durée moyenne d'une table, en minutes
+const CALL_TIME = 60; // appel « Prépare-toi » pendant la dernière épreuve de la table d'avant
+const CALL_TIME_LATE = 25; // appel au dernier moment (table connue seulement à la fin de la ronde)
 
 type Player = { id: string; name: string; photo: number | string; me?: boolean; level: BotLevel; score: number; last: number };
 type Answer = { at: number; word?: string; value?: number; steps?: string[] };
@@ -85,7 +88,7 @@ type Result = { id: string; answer: Answer | null; valid: boolean; points: numbe
 type Phase = 'mode' | 'intro' | 'choose' | 'draw' | 'play' | 'reveal' | 'elim' | 'champion' | 'end' | 'size' | 'signup' | 'tableEnd' | 'leagueEnd';
 type Format = 'tournoi' | 'groupe';
 type Standing = { p: Player; pts: number; game: number; wins: number };
-type TableEnd = { ranking: Player[]; label: string; next: Player[]; nextLabel: string; note: string; step: 'table' | 'ronde' | 'final'; tables?: Player[][] };
+type TableEnd = { ranking: Player[]; label: string; next: Player[]; nextLabel: string; note: string; step: 'table' | 'ronde' | 'final'; tables?: Player[][]; absent?: string[] };
 const IDLE: Phase[] = ['intro', 'mode', 'elim', 'champion', 'end', 'size', 'signup', 'tableEnd', 'leagueEnd'];
 type Overlay = { who: Player; ranking: Player[]; up?: Player[] };
 type Crowns = Record<string, { n: number; p: Player }>;
@@ -165,7 +168,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState('');
   const inputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   const chatY = useRef(600);
-  const [chatRows, setChatRows] = useState(5); // autant de messages que la place le permet
+  const [chatH, setChatH] = useState(160); // hauteur du chat : autant de messages que la place le permet
 
   // ── le tournoi ──
   const viewerSeq = useRef(0);
@@ -216,6 +219,12 @@ function Game({ onClose }: { onClose: () => void }) {
   const [isFinal, setIsFinal] = useState(false);
   const [tableEnd, setTableEnd] = useState<TableEnd | null>(null);
   const [champ, setChamp] = useState<{ who: Player; ranking: Player[] } | null>(null);
+  // appel avant de monter : ta réponse (prêt / absent), la fenêtre et son compte à rebours
+  const [ready, setReady] = useState<boolean | null>(null);
+  const [callUp, setCallUp] = useState(false);
+  const [callLeft, setCallLeft] = useState(0);
+  const [absentIds, setAbsentIds] = useState<string[]>([]);
+  const tableEndAt = useRef(0);
   const group = format === 'groupe';
   const rondes = RONDES[lgSize] ?? 4;
   const general = sortStandings(standings);
@@ -229,6 +238,29 @@ function Game({ onClose }: { onClose: () => void }) {
   const meQueued = queue.some((p) => p.me);
   const chooser = stage[(epreuve + stageIdx + letters.length) % stage.length];
   const nextChooser = letters.length + 1 < LETTER_COUNT ? stage[(epreuve + stageIdx + letters.length + 1) % stage.length] : null;
+
+  // ── championnat : ta place, la prochaine table ──
+  const nextTable = group && !isFinal && tableIdx + 1 < tables.length ? tables[tableIdx + 1] : null;
+  const nextNote = !group || isFinal || phase === 'size' || phase === 'signup' || phase === 'leagueEnd' ? null : nextTable ? 'Ensuite' : ronde < rondes ? `Ronde ${ronde + 1} ensuite` : 'Finale ensuite';
+  const myTable = group ? tables.findIndex((t) => t.some((p) => p.me)) : -1;
+  const myStatus = (() => {
+    if (!group || meOnStage || !general.length || phase === 'size' || phase === 'signup' || phase === 'leagueEnd') return null;
+    const r = rankOf('me');
+    // ta place n'a de sens qu'une fois les premiers points distribués
+    const place = general.some((x) => x.pts > 0) ? ` · ${r === 1 ? '1er' : `${r}e`} (${pts(standings.me?.pts ?? 0)})` : '';
+    if (isFinal) return `Tu finis${place.replace(' ·', '')} · place à la finale`;
+    if (ready === true) return '✅ Prêt · tu montes juste après';
+    if (ready === false) return '❌ Tu passes ta table · 0 point';
+    if (myTable === tableIdx && absentIds.includes('me')) return '❌ Absent à ta table · 0 point';
+    if (myTable > tableIdx) {
+      if (myTable === tableIdx + 1) return `🎮 Tu joues juste après${place}`;
+      const left = myTable - tableIdx - (phase === 'tableEnd' ? 1 : epreuve / STAGE.rounds.length);
+      return `🎮 Table ${myTable + 1} · dans ~${Math.max(1, Math.round(left * PARTIE_MIN))} min${place}`;
+    }
+    return `✔︎ Ta table a joué${place}`;
+  })();
+  const strip = !!(myStatus || nextNote);
+  const chatRows = Math.max(2, Math.floor((chatH - 14 - (strip ? 34 : 0)) / 28));
 
   // ── des spectateurs demandent à monter de temps en temps ──
   useEffect(() => {
@@ -278,6 +310,9 @@ function Game({ onClose }: { onClose: () => void }) {
     setRonde(1);
     setIsFinal(false);
     setChamp(null);
+    setReady(null);
+    setCallUp(false);
+    setAbsentIds([]);
     setStage(tb[0].map(fresh));
     setStageIdx(0);
     setEpreuve(0);
@@ -285,28 +320,33 @@ function Game({ onClose }: { onClose: () => void }) {
   };
 
   // fin d'une table : points au classement, puis table suivante, ronde suivante ou grande finale
-  const endTable = (ranking: Player[]) => {
+  const endTable = (present: Player[]) => {
+    // les absents finissent derniers, avec 0 point
+    const away = absentIds.map((id) => standings[id]?.p).filter((p): p is Player => !!p).map(fresh);
     if (isFinal) {
       // égalité en finale : le mieux classé des rondes passe devant
-      const fin = [...ranking].sort((x, y) => y.score - x.score || y.last - x.last || rankOf(x.id) - rankOf(y.id));
-      setChamp({ who: fin[0], ranking: fin });
+      const fin = [...present].sort((x, y) => y.score - x.score || y.last - x.last || rankOf(x.id) - rankOf(y.id));
+      setChamp({ who: fin[0], ranking: [...fin, ...away] });
       setPhase('leagueEnd');
       return;
     }
+    const ranking = [...present, ...away];
+    const absent = absentIds;
     const st = { ...standings };
-    ranking.forEach((p, i) => {
+    present.forEach((p, i) => {
       const cur = st[p.id];
       if (cur) st[p.id] = { ...cur, pts: cur.pts + TABLE_POINTS[i], game: cur.game + p.score, wins: cur.wins + (i === 0 ? 1 : 0) };
     });
     setStandings(st);
     const label = `Ronde ${ronde}/${rondes} · Table ${tableIdx + 1}/${tables.length}`;
     if (tableIdx + 1 < tables.length) {
-      setTableEnd({ ranking, label, next: tables[tableIdx + 1], nextLabel: `Table ${tableIdx + 2} monte sur scène`, note: '', step: 'table' });
+      setTableEnd({ ranking, absent, label, next: tables[tableIdx + 1], nextLabel: `Table ${tableIdx + 2} monte sur scène`, note: '', step: 'table' });
     } else if (ronde < rondes) {
       // système suisse : les premiers ensemble, les derniers ensemble ; on commence par le bas du classement
       const tb = chunk4(sortStandings(st).map((x) => x.p)).reverse();
       setTableEnd({
         ranking,
+        absent,
         label,
         next: tb[0],
         nextLabel: `Ronde ${ronde + 1} · Table 1 monte sur scène`,
@@ -317,6 +357,7 @@ function Game({ onClose }: { onClose: () => void }) {
     } else {
       setTableEnd({
         ranking,
+        absent,
         label,
         next: sortStandings(st)
           .slice(0, 4)
@@ -326,12 +367,18 @@ function Game({ onClose }: { onClose: () => void }) {
         step: 'final',
       });
     }
+    tableEndAt.current = Date.now();
     setPhase('tableEnd');
   };
 
   useEffect(() => {
     if (phase !== 'tableEnd' || !tableEnd) return;
+    const meNext = tableEnd.next.some((p) => p.me);
+    const mustConfirm = meNext && !stage.some((p) => p.me);
+    if (mustConfirm && ready === null) return; // on attend ta réponse à l'appel « Prépare-toi »
+    const wait = Math.max(mustConfirm ? 1200 : 0, 9000 - (Date.now() - tableEndAt.current));
     const t = setTimeout(() => {
+      const away = mustConfirm && ready !== true;
       if (tableEnd.step === 'table') setTableIdx((i) => i + 1);
       if (tableEnd.step === 'ronde') {
         setTables(tableEnd.tables ?? []);
@@ -339,15 +386,59 @@ function Game({ onClose }: { onClose: () => void }) {
         setRonde((r) => r + 1);
       }
       if (tableEnd.step === 'final') setIsFinal(true);
-      setStage(tableEnd.next.map(fresh));
-      if (tableEnd.next.some((p) => p.me)) toast.show('À toi ! Ta table monte sur scène 🎤');
+      setAbsentIds(away ? ['me'] : []);
+      setStage((away ? tableEnd.next.filter((p) => !p.me) : tableEnd.next).map(fresh));
+      if (meNext && !away) toast.show('À toi ! Ta table monte sur scène 🎤');
+      setReady(null);
+      setCallUp(false);
       setEpreuve(0);
       setTableEnd(null);
       setPhase('intro');
-    }, 9000);
+    }, wait);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, tableEnd]);
+  }, [phase, tableEnd, ready]);
+
+  // ── appel « Prépare-toi » : pendant la dernière épreuve de la table d'avant, ou à la fin de la ronde ──
+  useEffect(() => {
+    if (!group || callUp || ready !== null || meOnStage) return;
+    const lastEpreuve = epreuve === STAGE.rounds.length - 1 && ['intro', 'choose', 'draw', 'play'].includes(phase);
+    let left = 0;
+    if (lastEpreuve && nextTable?.some((p) => p.me)) left = CALL_TIME;
+    else if (phase === 'tableEnd' && tableEnd?.next.some((p) => p.me)) left = CALL_TIME_LATE;
+    if (!left) return;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    setCallLeft(left);
+    setCallUp(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group, phase, epreuve, tableEnd, callUp, ready, meOnStage]);
+
+  // compte à rebours : sans réponse, tu es absent pour cette table
+  useEffect(() => {
+    if (!callUp) return;
+    if (callLeft <= 0) {
+      setReady(false);
+      setCallUp(false);
+      toast.show('Pas de réponse : tu es absent pour cette table (0 point)');
+      return;
+    }
+    const t = setTimeout(() => setCallLeft((x) => x - 1), 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callUp, callLeft]);
+
+  const confirmReady = () => {
+    setReady(true);
+    setCallUp(false);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    toast.show('Parfait ! Tu montes juste après 🎤');
+  };
+  const skipTable = () => {
+    tap();
+    setReady(false);
+    setCallUp(false);
+    toast.show('Tu passes cette table : 0 point. Tu restes dans le championnat.');
+  };
 
   // ── 1. Intro de l'épreuve ──
   useEffect(() => {
@@ -1121,10 +1212,31 @@ function Game({ onClose }: { onClose: () => void }) {
         style={styles.chatWrap}
         onLayout={(e) => {
           chatY.current = e.nativeEvent.layout.y;
-          setChatRows(Math.max(2, Math.floor((e.nativeEvent.layout.height - 14) / 28)));
+          setChatH(e.nativeEvent.layout.height);
         }}
       >
         <View style={styles.chat}>
+          {strip && (
+            <View style={styles.lgStrip}>
+              {myStatus ? (
+                <View style={styles.lgMePill}>
+                  <Text style={styles.lgMe} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                    {myStatus}
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ flex: 1 }} />
+              )}
+              {nextNote && (
+                <Pressable onPress={() => setQueueOpen(true)} style={styles.lgNext} hitSlop={6}>
+                  <Text style={styles.lgNextText}>{nextNote}</Text>
+                  {nextTable?.map((p, i) => (
+                    <Image key={p.id} source={p.photo} style={[styles.lgNextAv, i > 0 && { marginLeft: -8 }, p.me && { borderColor: GOLD }]} />
+                  ))}
+                </Pressable>
+              )}
+            </View>
+          )}
           {chat.msgs.slice(-chatRows).map((m) => {
             const mention = m.text.match(/^@\S+/)?.[0];
             return (
@@ -1221,6 +1333,27 @@ function Game({ onClose }: { onClose: () => void }) {
       {phase === 'signup' && <SignupCard top={T + 90} size={lgSize} players={signups} onStart={startLeague} onBack={() => setPhase('size')} />}
       {phase === 'tableEnd' && tableEnd && <TableEndCard t={tableEnd} general={general} top={T + 80} />}
       {phase === 'leagueEnd' && champ && <LeagueEndCard c={champ} general={general} top={T + 80} onRelaunch={() => setPhase('size')} onClose={onClose} />}
+      {callUp && (
+        <FadeIn style={[styles.callCard, { bottom: Math.max(insets.bottom - 6, 10) + 56 }]}>
+          <View style={styles.callCam}>
+            <Image source={DEENA_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
+            <View style={styles.camDot} />
+            <Text style={styles.callCamText}>📷 Ta caméra</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.callTitle}>Prépare-toi ! 🎤</Text>
+            <Text style={styles.callSub}>{phase === 'tableEnd' ? 'Ta table monte sur scène maintenant.' : 'Ta table monte après cette épreuve.'} Vérifie ta caméra.</Text>
+            <Pressable onPress={confirmReady}>
+              <LinearGradient colors={goldGradient} style={styles.callBtn}>
+                <Text style={styles.callBtnText}>Je suis prêt ✅ · {callLeft}s</Text>
+              </LinearGradient>
+            </Pressable>
+            <Pressable onPress={skipTable} hitSlop={6}>
+              <Text style={styles.callSkip}>Je ne peux pas jouer cette table</Text>
+            </Pressable>
+          </View>
+        </FadeIn>
+      )}
       {phase === 'elim' && overlay && <ElimCard o={overlay} top={T + 150} />}
       {phase === 'champion' && overlay && <ChampionCard o={overlay} manche={manche} crowns={crowns} top={T + 130} />}
       {phase === 'end' && overlay && <EndCard o={overlay} crowns={crowns} top={T + 110} onRelaunch={relaunch} onClose={onClose} />}
@@ -1545,16 +1678,19 @@ function TableEndCard({ t, general, top }: { t: TableEnd; general: Standing[]; t
     <Cover top={top}>
       <Text style={styles.finalTitle}>{w.me ? 'Tu gagnes ta table !' : `${w.name} gagne la table`}</Text>
       <Text style={styles.finalSub}>{t.label}</Text>
-      {t.ranking.map((p, i) => (
-        <View key={p.id} style={[styles.rankRow, i === 0 && styles.rankWin]}>
-          <Text style={styles.rankPos}>{i + 1}</Text>
-          <Image source={p.photo} style={styles.rankAv} />
-          <Text style={styles.rankName}>
-            {nameOf(p)} <Text style={styles.rankSmall}>{pts(p.score)} de jeu</Text>
-          </Text>
-          <Text style={styles.rankScore}>+{TABLE_POINTS[i]}</Text>
-        </View>
-      ))}
+      {t.ranking.map((p, i) => {
+        const away = t.absent?.includes(p.id);
+        return (
+          <View key={p.id} style={[styles.rankRow, i === 0 && styles.rankWin, away && { opacity: 0.55 }]}>
+            <Text style={styles.rankPos}>{i + 1}</Text>
+            <Image source={p.photo} style={styles.rankAv} />
+            <Text style={styles.rankName}>
+              {nameOf(p)} <Text style={styles.rankSmall}>{away ? 'absent' : `${pts(p.score)} de jeu`}</Text>
+            </Text>
+            <Text style={styles.rankScore}>+{away ? 0 : TABLE_POINTS[i]}</Text>
+          </View>
+        );
+      })}
       <Text style={styles.sectionTitle}>📊 Classement général</Text>
       <StandingsList general={general} limit={5} highlight={t.ranking.map((p) => p.id)} />
       {!!t.note && <Text style={styles.outText}>{t.note}</Text>}
@@ -2309,6 +2445,52 @@ const styles = StyleSheet.create({
   soon: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '800' },
 
   // championnat
+  lgStrip: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 30, marginBottom: 4 },
+  lgMePill: {
+    flex: 1,
+    height: 30,
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(233,185,73,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(233,185,73,0.7)',
+  },
+  lgMe: { color: '#FFE7A8', fontSize: 12.5, fontWeight: '900' },
+  lgNext: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 30,
+    paddingLeft: 10,
+    paddingRight: 4,
+    borderRadius: 15,
+    backgroundColor: 'rgba(21,17,74,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.8)',
+  },
+  lgNextText: { color: '#C9B8FF', fontSize: 11.5, fontWeight: '900', marginRight: 6 },
+  lgNextAv: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#15114A' },
+  callCard: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 40,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 12,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: GOLD,
+    backgroundColor: 'rgba(14,16,52,0.98)',
+    ...glow,
+  },
+  callCam: { width: 86, height: 124, borderRadius: 14, overflow: 'hidden', borderWidth: 2, borderColor: GOLD2, backgroundColor: '#15114A' },
+  callCamText: { position: 'absolute', bottom: 5, alignSelf: 'center', color: '#fff', fontSize: 10.5, fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.9)', textShadowRadius: 3 },
+  callTitle: { color: GOLD, fontSize: 19, fontWeight: '900', fontFamily: 'Georgia' },
+  callSub: { color: '#fff', fontSize: 12.5, marginTop: 3, lineHeight: 17 },
+  callBtn: { marginTop: 9, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  callBtnText: { color: INK, fontSize: 14.5, fontWeight: '900' },
+  callSkip: { color: 'rgba(255,255,255,0.65)', fontSize: 11.5, fontWeight: '800', textAlign: 'center', marginTop: 8 },
   sizeNum: { width: 44, textAlign: 'center', color: GOLD, fontSize: 28, fontWeight: '900', fontFamily: 'Georgia' },
   rulesBox: { marginTop: 4, padding: 12, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)' },
   rulesText: { color: 'rgba(255,255,255,0.8)', fontSize: 12.5, lineHeight: 19 },
