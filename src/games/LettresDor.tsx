@@ -41,6 +41,13 @@ import {
 // - Pour les lettres, les joueurs choisissent Voyelle ou Consonne chacun leur tour.
 // - Réponses cachées, chrono qui s'arrête quand tout le monde a répondu, puis révélation.
 //
+// MODE GROUPE (championnat)
+// - L'hôte choisit 12, 16 ou 20 joueurs ; les spectateurs s'inscrivent.
+// - Ronde 1 : tables de 4 au hasard. Chaque table joue Lettres, Lettres, Chiffres.
+// - Points au classement général : 1er 4 pts, 2e 3, 3e 2, 4e 1.
+// - Rondes suivantes : tables refaites d'après le classement (système suisse).
+// - Après la dernière ronde, les 4 premiers jouent la grande finale.
+//
 // Ici : toi + des joueurs simulés.
 
 const GOLD = '#F3D27A';
@@ -62,13 +69,24 @@ const STAGES: { n: number; label: string; rounds: Kind[] }[] = [
   { n: 2, label: 'Finale', rounds: ['C', 'C', 'L'] },
 ];
 
+// championnat : une table joue 3 épreuves, la grande finale en joue 4
+const TABLE_STAGE = { n: 4, label: 'Table', rounds: ['L', 'L', 'C'] as Kind[] };
+const FINAL_STAGE = { n: 4, label: 'Grande finale', rounds: ['L', 'C', 'L', 'C'] as Kind[] };
+const GROUP_SIZES = [12, 16, 20];
+const RONDES: Record<number, number> = { 12: 5, 16: 4, 20: 3 }; // environ 15 parties, soit à peu près 1 h
+const TABLE_POINTS = [4, 3, 2, 1];
+
 type Player = { id: string; name: string; photo: number | string; me?: boolean; level: BotLevel; score: number; last: number };
 type Answer = { at: number; word?: string; value?: number; steps?: string[] };
 type RoundData =
   | { kind: 'L'; letters: string[]; sol: ReturnType<typeof solveLetters> }
   | { kind: 'C'; plaques: number[]; target: number; best: number; bestSteps: string[]; reach: Map<number, string[]> };
 type Result = { id: string; answer: Answer | null; valid: boolean; points: number; dist?: number; note: string };
-type Phase = 'mode' | 'intro' | 'choose' | 'draw' | 'play' | 'reveal' | 'elim' | 'champion' | 'end';
+type Phase = 'mode' | 'intro' | 'choose' | 'draw' | 'play' | 'reveal' | 'elim' | 'champion' | 'end' | 'size' | 'signup' | 'tableEnd' | 'leagueEnd';
+type Format = 'tournoi' | 'groupe';
+type Standing = { p: Player; pts: number; game: number; wins: number };
+type TableEnd = { ranking: Player[]; label: string; next: Player[]; nextLabel: string; note: string; step: 'table' | 'ronde' | 'final'; tables?: Player[][] };
+const IDLE: Phase[] = ['intro', 'mode', 'elim', 'champion', 'end', 'size', 'signup', 'tableEnd', 'leagueEnd'];
 type Overlay = { who: Player; ranking: Player[]; up?: Player[] };
 type Crowns = Record<string, { n: number; p: Player }>;
 
@@ -82,7 +100,19 @@ const LEVELS: BotLevel[] = [
 const VIEWERS = ['Fatou', 'Yann', 'Nadia', 'Karim', 'Sophie', 'Djamal', 'Lina', 'Alex', 'Emma', 'Momo', 'Sarah', 'Kevin', 'Bintou', 'Idriss', 'Leïla', 'Malik', 'Noura', 'Jordan', 'Mariam', 'Samir'];
 
 const fresh = (p: Player): Player => ({ ...p, score: 0, last: 0 });
+const shuffle = <T,>(a: T[]) => {
+  const b = [...a];
+  for (let i = b.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [b[i], b[j]] = [b[j], b[i]];
+  }
+  return b;
+};
+const chunk4 = <T,>(a: T[]) => Array.from({ length: Math.ceil(a.length / 4) }, (_, i) => a.slice(i * 4, i * 4 + 4));
+// classement général : points, puis points de jeu, puis victoires
+const sortStandings = (st: Record<string, Standing>) => Object.values(st).sort((a, b) => b.pts - a.pts || b.game - a.game || b.wins - a.wins);
 const nameOf = (p: Player) => (p.me ? 'Toi' : p.name);
+const pts = (n: number) => `${n} pt${n > 1 ? 's' : ''}`;
 const worldPlayer = (id: string, level: BotLevel): Player => {
   const p = findPerson(id);
   return { id, name: p?.name ?? id, photo: p?.photo ?? '', level, score: 0, last: 0 };
@@ -175,7 +205,23 @@ function Game({ onClose }: { onClose: () => void }) {
   const [op, setOp] = useState<Op | null>(null);
   const [steps, setSteps] = useState<{ a: number; b: number; text: string }[]>([]);
 
-  const STAGE = STAGES[stageIdx];
+  // ── le championnat (mode groupe) ──
+  const [format, setFormat] = useState<Format>('tournoi');
+  const [lgSize, setLgSize] = useState(16);
+  const [signups, setSignups] = useState<Player[]>([]);
+  const [standings, setStandings] = useState<Record<string, Standing>>({});
+  const [ronde, setRonde] = useState(1);
+  const [tables, setTables] = useState<Player[][]>([]);
+  const [tableIdx, setTableIdx] = useState(0);
+  const [isFinal, setIsFinal] = useState(false);
+  const [tableEnd, setTableEnd] = useState<TableEnd | null>(null);
+  const [champ, setChamp] = useState<{ who: Player; ranking: Player[] } | null>(null);
+  const group = format === 'groupe';
+  const rondes = RONDES[lgSize] ?? 4;
+  const general = sortStandings(standings);
+  const rankOf = (id: string) => general.findIndex((x) => x.p.id === id) + 1;
+
+  const STAGE = group ? (isFinal ? FINAL_STAGE : TABLE_STAGE) : STAGES[stageIdx];
   const kind = STAGE.rounds[epreuve];
   const duration = DURATION[kind];
   const left = duration - elapsed;
@@ -186,7 +232,7 @@ function Game({ onClose }: { onClose: () => void }) {
 
   // ── des spectateurs demandent à monter de temps en temps ──
   useEffect(() => {
-    if (phase === 'mode') return;
+    if (phase === 'mode' || group) return;
     const t = setInterval(() => {
       setQueue((q) => {
         if (q.length >= 6) return q;
@@ -197,7 +243,111 @@ function Game({ onClose }: { onClose: () => void }) {
     }, 14000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase === 'mode']);
+  }, [phase === 'mode', group]);
+
+  // ── championnat : les spectateurs s'inscrivent jusqu'à ce que le groupe soit complet ──
+  useEffect(() => {
+    if (phase !== 'signup' || signups.length >= lgSize) return;
+    const t = setTimeout(() => {
+      const taken = new Set(signups.map((p) => p.name));
+      let v = newViewer();
+      for (let k = 0; k < 40 && taken.has(v.name); k++) v = newViewer();
+      chat.push(v.name, '✍️ s’inscrit au championnat');
+      setSignups((cur) => [...cur, v]);
+    }, rand(250, 600));
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, signups, lgSize]);
+
+  const pickSize = (n: number) => {
+    tap();
+    setLgSize(n);
+    setSignups([ME, worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2])]);
+    setPhase('signup');
+  };
+
+  // ronde 1 : tables de 4 au hasard
+  const startLeague = () => {
+    tap();
+    const st: Record<string, Standing> = {};
+    for (const p of signups) st[p.id] = { p: fresh(p), pts: 0, game: 0, wins: 0 };
+    const tb = chunk4(shuffle(signups));
+    setStandings(st);
+    setTables(tb);
+    setTableIdx(0);
+    setRonde(1);
+    setIsFinal(false);
+    setChamp(null);
+    setStage(tb[0].map(fresh));
+    setStageIdx(0);
+    setEpreuve(0);
+    setPhase('intro');
+  };
+
+  // fin d'une table : points au classement, puis table suivante, ronde suivante ou grande finale
+  const endTable = (ranking: Player[]) => {
+    if (isFinal) {
+      // égalité en finale : le mieux classé des rondes passe devant
+      const fin = [...ranking].sort((x, y) => y.score - x.score || y.last - x.last || rankOf(x.id) - rankOf(y.id));
+      setChamp({ who: fin[0], ranking: fin });
+      setPhase('leagueEnd');
+      return;
+    }
+    const st = { ...standings };
+    ranking.forEach((p, i) => {
+      const cur = st[p.id];
+      if (cur) st[p.id] = { ...cur, pts: cur.pts + TABLE_POINTS[i], game: cur.game + p.score, wins: cur.wins + (i === 0 ? 1 : 0) };
+    });
+    setStandings(st);
+    const label = `Ronde ${ronde}/${rondes} · Table ${tableIdx + 1}/${tables.length}`;
+    if (tableIdx + 1 < tables.length) {
+      setTableEnd({ ranking, label, next: tables[tableIdx + 1], nextLabel: `Table ${tableIdx + 2} monte sur scène`, note: '', step: 'table' });
+    } else if (ronde < rondes) {
+      // système suisse : les premiers ensemble, les derniers ensemble ; on commence par le bas du classement
+      const tb = chunk4(sortStandings(st).map((x) => x.p)).reverse();
+      setTableEnd({
+        ranking,
+        label,
+        next: tb[0],
+        nextLabel: `Ronde ${ronde + 1} · Table 1 monte sur scène`,
+        note: `Fin de la ronde ${ronde} ! Les tables sont refaites d’après le classement : les premiers jouent ensemble, les derniers aussi.`,
+        step: 'ronde',
+        tables: tb,
+      });
+    } else {
+      setTableEnd({
+        ranking,
+        label,
+        next: sortStandings(st)
+          .slice(0, 4)
+          .map((x) => x.p),
+        nextLabel: 'Grande finale : les 4 premiers',
+        note: 'Fin des rondes ! Les 4 premiers du classement jouent la grande finale.',
+        step: 'final',
+      });
+    }
+    setPhase('tableEnd');
+  };
+
+  useEffect(() => {
+    if (phase !== 'tableEnd' || !tableEnd) return;
+    const t = setTimeout(() => {
+      if (tableEnd.step === 'table') setTableIdx((i) => i + 1);
+      if (tableEnd.step === 'ronde') {
+        setTables(tableEnd.tables ?? []);
+        setTableIdx(0);
+        setRonde((r) => r + 1);
+      }
+      if (tableEnd.step === 'final') setIsFinal(true);
+      setStage(tableEnd.next.map(fresh));
+      if (tableEnd.next.some((p) => p.me)) toast.show('À toi ! Ta table monte sur scène 🎤');
+      setEpreuve(0);
+      setTableEnd(null);
+      setPhase('intro');
+    }, 9000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, tableEnd]);
 
   // ── 1. Intro de l'épreuve ──
   useEffect(() => {
@@ -429,6 +579,7 @@ function Game({ onClose }: { onClose: () => void }) {
       return;
     }
     const ranking = ranked(stage);
+    if (group) return endTable(ranking);
     if (stage.length > 2) {
       // le dernier descend de la scène
       setOverlay({ who: ranking[ranking.length - 1], ranking });
@@ -634,7 +785,7 @@ function Game({ onClose }: { onClose: () => void }) {
             <View style={styles.sideLeft}>
               <View style={styles.sidePill}>
                 <Text style={styles.sideText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-                  Manche {manche}/{MANCHES}
+                  {group ? (isFinal ? 'Grande finale' : `Ronde ${ronde}/${rondes}`) : `Manche ${manche}/${MANCHES}`}
                 </Text>
               </View>
             </View>
@@ -647,7 +798,7 @@ function Game({ onClose }: { onClose: () => void }) {
             <View style={styles.sideRight}>
               <View style={styles.sidePill}>
                 <Text style={[styles.sideText, { color: GOLD, flexShrink: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-                  {STAGE.label}
+                  {group ? (isFinal ? 'Top 4' : `Table ${tableIdx + 1}/${tables.length || 1}`) : STAGE.label}
                 </Text>
                 <View style={styles.dots}>
                   {STAGE.rounds.map((k, i) => (
@@ -659,8 +810,8 @@ function Game({ onClose }: { onClose: () => void }) {
           </View>
 
           <View style={{ marginTop: 8 }}>
-            {(phase === 'intro' || phase === 'mode' || phase === 'elim' || phase === 'champion' || phase === 'end') && (
-              <IntroText epreuve={epreuve} stageLabel={STAGE.label} kind={kind} />
+            {IDLE.includes(phase) && (
+              <IntroText epreuve={epreuve} total={STAGE.rounds.length} stageLabel={group ? (isFinal ? 'Grande finale' : `Ronde ${ronde} · Table ${tableIdx + 1}`) : STAGE.label} kind={kind} />
             )}
 
             {/* lettres : 10 tuiles sur une ligne */}
@@ -754,7 +905,7 @@ function Game({ onClose }: { onClose: () => void }) {
           <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <TimerRing size={ringSize} value={ringValue} total={ringTotal} paused={phase === 'reveal'} />
             <View style={{ flex: 1 }}>
-              {(phase === 'intro' || phase === 'mode' || phase === 'elim' || phase === 'champion' || phase === 'end') && (
+              {IDLE.includes(phase) && (
                 <Text style={styles.hint}>
                   {kind === 'L'
                     ? `Chacun choisit voyelle ou consonne à son tour. ${DURATION.L} s · 1 point par lettre.`
@@ -798,7 +949,13 @@ function Game({ onClose }: { onClose: () => void }) {
 
               {phase === 'draw' && <Text style={styles.hint}>Tirage des plaques…</Text>}
 
-              {phase === 'play' && !meOnStage && <Text style={styles.hint}>Tu regardes. Touche 🙋 en bas pour demander à monter sur scène.</Text>}
+              {phase === 'play' && !meOnStage && <Text style={styles.hint}>
+                  {group
+                    ? isFinal
+                      ? 'Tu regardes la grande finale. Touche 📊 pour voir le classement.'
+                      : 'Tu regardes. Ta table passera bientôt. Touche 📊 pour voir le classement.'
+                    : 'Tu regardes. Touche 🙋 en bas pour demander à monter sur scène.'}
+                </Text>}
 
               {phase === 'play' && meOnStage && data?.kind === 'L' && (
                 <View style={styles.inputRow}>
@@ -881,7 +1038,8 @@ function Game({ onClose }: { onClose: () => void }) {
           const r = resultOf(p.id);
           const flash = phase === 'reveal' && revealedIds.includes(p.id) && !!r?.points;
           const choosing = phase === 'choose' && letters.length < LETTER_COUNT && chooser?.id === p.id;
-          const crown = crowns[p.id]?.n ?? 0;
+          const crown = group ? 0 : (crowns[p.id]?.n ?? 0);
+          const rank = group && general.some((x) => x.pts > 0) ? rankOf(p.id) : 0;
           return (
             <View key={p.id} style={{ width: camW }}>
               <View style={[styles.cam, { height: card4 * 1.6 }, p.me && styles.camMe, (flash || choosing) && styles.camFlash]}>
@@ -910,9 +1068,9 @@ function Game({ onClose }: { onClose: () => void }) {
                   </LinearGradient>
                 </View>
               </View>
-              {crown > 0 && (
+              {(crown > 0 || rank > 0) && (
                 <View style={styles.crownPill} pointerEvents="none">
-                  <Text style={styles.crownText}>👑 {crown}</Text>
+                  <Text style={styles.crownText}>{rank > 0 ? `#${rank} · ${pts(standings[p.id]?.pts ?? 0)}` : `👑 ${crown}`}</Text>
                 </View>
               )}
             </View>
@@ -1030,9 +1188,9 @@ function Game({ onClose }: { onClose: () => void }) {
           </RoundGold>
           <View>
             <RoundGold onPress={() => setQueueOpen(true)}>
-              <Text style={{ fontSize: 20 }}>🙋</Text>
+              <Text style={{ fontSize: 20 }}>{group ? '📊' : '🙋'}</Text>
             </RoundGold>
-            {queue.length > 0 && (
+            {!group && queue.length > 0 && (
               <View style={styles.badge} pointerEvents="none">
                 <Text style={styles.badgeText}>{queue.length}</Text>
               </View>
@@ -1044,12 +1202,45 @@ function Game({ onClose }: { onClose: () => void }) {
       {floaters.layer}
 
       {/* ── écrans par-dessus : mode, élimination, fin de manche, fin du tournoi ── */}
-      {phase === 'mode' && <ModePicker top={T + 120} onTournament={() => setPhase('intro')} onClose={onClose} />}
+      {phase === 'mode' && (
+        <ModePicker
+          top={T + 120}
+          onTournament={() => {
+            setFormat('tournoi');
+            setPhase('intro');
+          }}
+          onGroup={() => {
+            tap();
+            setFormat('groupe');
+            setPhase('size');
+          }}
+          onClose={onClose}
+        />
+      )}
+      {phase === 'size' && <SizePicker top={T + 100} onPick={pickSize} onBack={() => setPhase('mode')} />}
+      {phase === 'signup' && <SignupCard top={T + 90} size={lgSize} players={signups} onStart={startLeague} onBack={() => setPhase('size')} />}
+      {phase === 'tableEnd' && tableEnd && <TableEndCard t={tableEnd} general={general} top={T + 80} />}
+      {phase === 'leagueEnd' && champ && <LeagueEndCard c={champ} general={general} top={T + 80} onRelaunch={() => setPhase('size')} onClose={onClose} />}
       {phase === 'elim' && overlay && <ElimCard o={overlay} top={T + 150} />}
       {phase === 'champion' && overlay && <ChampionCard o={overlay} manche={manche} crowns={crowns} top={T + 130} />}
       {phase === 'end' && overlay && <EndCard o={overlay} crowns={crowns} top={T + 110} onRelaunch={relaunch} onClose={onClose} />}
 
-      <Sheet open={queueOpen} onClose={() => setQueueOpen(false)} title="File d’attente" subtitle="Les prochains à monter sur scène">
+      <Sheet
+        open={queueOpen && group}
+        onClose={() => setQueueOpen(false)}
+        title="Classement général"
+        subtitle={isFinal ? 'Grande finale en cours' : `Ronde ${ronde}/${rondes} · 1er 4 pts, 2e 3, 3e 2, 4e 1`}
+      >
+        <ScrollView style={{ maxHeight: 420 }}>
+          {general.length === 0 ? (
+            <Text style={styles.queueEmpty}>Le classement apparaît quand le championnat commence.</Text>
+          ) : (
+            <StandingsList general={general} highlight={stage.map((p) => p.id)} />
+          )}
+        </ScrollView>
+      </Sheet>
+
+      <Sheet open={queueOpen && !group} onClose={() => setQueueOpen(false)} title="File d’attente" subtitle="Les prochains à monter sur scène">
         <ScrollView style={{ maxHeight: 300 }}>
           {queue.length === 0 && <Text style={styles.queueEmpty}>Personne dans la file pour l’instant.</Text>}
           {queue.map((p, i) => (
@@ -1183,7 +1374,7 @@ function TimerRing({ size, value, total, paused }: { size: number; value: number
   );
 }
 
-function IntroText({ epreuve, stageLabel, kind }: { epreuve: number; stageLabel: string; kind: Kind }) {
+function IntroText({ epreuve, total, stageLabel, kind }: { epreuve: number; total: number; stageLabel: string; kind: Kind }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     v.setValue(0);
@@ -1200,7 +1391,7 @@ function IntroText({ epreuve, stageLabel, kind }: { epreuve: number; stageLabel:
       }}
     >
       <Text style={styles.introSmall}>
-        {stageLabel.toUpperCase()} · ÉPREUVE {epreuve + 1}/3
+        {stageLabel.toUpperCase()} · ÉPREUVE {epreuve + 1}/{total}
       </Text>
       <Text style={styles.introBig}>{kind === 'L' ? 'Le mot le plus long' : 'Le compte est bon'}</Text>
     </Animated.View>
@@ -1218,7 +1409,7 @@ function Cover({ top, children }: { top: number; children: React.ReactNode }) {
 }
 
 // Au lancement : choisir le mode de jeu
-function ModePicker({ top, onTournament, onClose }: { top: number; onTournament: () => void; onClose: () => void }) {
+function ModePicker({ top, onTournament, onGroup, onClose }: { top: number; onTournament: () => void; onGroup: () => void; onClose: () => void }) {
   return (
     <Cover top={top}>
       <Text style={styles.finalTitle}>Lance ton live</Text>
@@ -1233,16 +1424,190 @@ function ModePicker({ top, onTournament, onClose }: { top: number; onTournament:
           <Ionicons name="chevron-forward" size={18} color={GOLD} />
         </View>
       </Pressable>
-      <View style={[styles.modeRow, { opacity: 0.55 }]}>
-        <Text style={{ fontSize: 30 }}>👥</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.modeTitle}>Groupe</Text>
-          <Text style={styles.modeDesc}>Bientôt disponible.</Text>
+      <Pressable onPress={onGroup}>
+        <View style={[styles.modeRow, styles.modeRowOn]}>
+          <Text style={{ fontSize: 30 }}>👥</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.modeTitle}>Groupe · Championnat</Text>
+            <Text style={styles.modeDesc}>12 à 20 joueurs. Tables de 4, classement général, grande finale. Environ 1 h.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={GOLD} />
         </View>
-        <Text style={styles.soon}>Bientôt</Text>
-      </View>
+      </Pressable>
       <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 8, padding: 6 }}>
         <Text style={styles.quitText}>Annuler</Text>
+      </Pressable>
+    </Cover>
+  );
+}
+
+// ── Championnat : nombre de joueurs ──
+function SizePicker({ top, onPick, onBack }: { top: number; onPick: (n: number) => void; onBack: () => void }) {
+  return (
+    <Cover top={top}>
+      <Text style={styles.finalTitle}>Championnat</Text>
+      <Text style={styles.finalSub}>Combien de joueurs dans le groupe ?</Text>
+      {GROUP_SIZES.map((n) => (
+        <Pressable key={n} onPress={() => onPick(n)}>
+          <View style={[styles.modeRow, styles.modeRowOn]}>
+            <Text style={styles.sizeNum}>{n}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modeTitle}>{n} joueurs</Text>
+              <Text style={styles.modeDesc}>
+                {n / 4} tables de 4 · {RONDES[n]} rondes + finale · environ 1 h
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={GOLD} />
+          </View>
+        </Pressable>
+      ))}
+      <View style={styles.rulesBox}>
+        <Text style={styles.rulesText}>
+          {'• Chaque table joue 2 lettres + 1 chiffres.\n• Classement : 1er 4 pts, 2e 3, 3e 2, 4e 1.\n• Après chaque ronde, les tables sont refaites d’après le classement.\n• Les 4 premiers jouent la grande finale (égalité : le mieux classé gagne).'}
+        </Text>
+      </View>
+      <Pressable onPress={onBack} style={{ alignSelf: 'center', marginTop: 8, padding: 6 }}>
+        <Text style={styles.quitText}>Retour</Text>
+      </Pressable>
+    </Cover>
+  );
+}
+
+// ── Championnat : inscriptions ──
+function SignupCard({ top, size, players, onStart, onBack }: { top: number; size: number; players: Player[]; onStart: () => void; onBack: () => void }) {
+  const full = players.length >= size;
+  return (
+    <Cover top={top}>
+      <Text style={styles.finalTitle}>Inscriptions</Text>
+      <Text style={styles.finalSub}>
+        {full ? 'Le groupe est complet !' : 'Les spectateurs s’inscrivent…'} {Math.min(players.length, size)}/{size}
+      </Text>
+      <View style={styles.signGrid}>
+        {Array.from({ length: size }).map((_, i) => {
+          const p = players[i];
+          return (
+            <View key={i} style={styles.signCell}>
+              {p ? <Image source={p.photo} style={[styles.signAv, p.me && { borderColor: GOLD, borderWidth: 2.5 }]} /> : <View style={[styles.signAv, styles.signEmpty]} />}
+              <Text style={styles.signName} numberOfLines={1}>
+                {p ? nameOf(p) : ''}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      <Pressable onPress={onStart} disabled={!full}>
+        <LinearGradient colors={full ? goldGradient : ['#3A2E18', '#2A2010']} style={styles.replay}>
+          <Text style={[styles.replayText, !full && { color: GOLD }]}>{full ? '🏁 Lancer le championnat' : 'En attente des joueurs…'}</Text>
+        </LinearGradient>
+      </Pressable>
+      <Pressable onPress={onBack} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
+        <Text style={styles.quitText}>Retour</Text>
+      </Pressable>
+    </Cover>
+  );
+}
+
+// ── Championnat : le classement général ──
+function StandingsList({ general, limit, highlight }: { general: Standing[]; limit?: number; highlight?: string[] }) {
+  const meIdx = general.findIndex((x) => x.p.me);
+  const rows = limit ? general.slice(0, limit) : general;
+  const row = (x: Standing, i: number) => (
+    <View key={x.p.id} style={[styles.stRow, highlight?.includes(x.p.id) && styles.stHi, x.p.me && styles.stMe]}>
+      <Text style={[styles.stPos, i < 4 && { color: GOLD }]}>{i + 1}</Text>
+      <Image source={x.p.photo} style={styles.stAv} />
+      <Text style={styles.stName} numberOfLines={1}>
+        {nameOf(x.p)}
+      </Text>
+      {x.wins > 0 && <Text style={styles.stWins}>🥇 {x.wins}</Text>}
+      <Text style={styles.stPts}>{pts(x.pts)}</Text>
+    </View>
+  );
+  return (
+    <>
+      {rows.map(row)}
+      {!!limit && meIdx >= limit && (
+        <>
+          <Text style={styles.stDots}>• • •</Text>
+          {row(general[meIdx], meIdx)}
+        </>
+      )}
+    </>
+  );
+}
+
+// ── Championnat : fin d'une table ──
+function TableEndCard({ t, general, top }: { t: TableEnd; general: Standing[]; top: number }) {
+  useEffect(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, []);
+  const w = t.ranking[0];
+  return (
+    <Cover top={top}>
+      <Text style={styles.finalTitle}>{w.me ? 'Tu gagnes ta table !' : `${w.name} gagne la table`}</Text>
+      <Text style={styles.finalSub}>{t.label}</Text>
+      {t.ranking.map((p, i) => (
+        <View key={p.id} style={[styles.rankRow, i === 0 && styles.rankWin]}>
+          <Text style={styles.rankPos}>{i + 1}</Text>
+          <Image source={p.photo} style={styles.rankAv} />
+          <Text style={styles.rankName}>
+            {nameOf(p)} <Text style={styles.rankSmall}>{pts(p.score)} de jeu</Text>
+          </Text>
+          <Text style={styles.rankScore}>+{TABLE_POINTS[i]}</Text>
+        </View>
+      ))}
+      <Text style={styles.sectionTitle}>📊 Classement général</Text>
+      <StandingsList general={general} limit={5} highlight={t.ranking.map((p) => p.id)} />
+      {!!t.note && <Text style={styles.outText}>{t.note}</Text>}
+      <View style={styles.upBox}>
+        <Text style={styles.upTitle}>🎤 {t.nextLabel}</Text>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+          {t.next.map((p) => (
+            <View key={p.id} style={{ alignItems: 'center', flex: 1 }}>
+              <Image source={p.photo} style={styles.upAv} />
+              <Text style={styles.upName} numberOfLines={1}>
+                {nameOf(p)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </Cover>
+  );
+}
+
+// ── Championnat : le champion ──
+function LeagueEndCard({
+  c,
+  general,
+  top,
+  onRelaunch,
+  onClose,
+}: {
+  c: { who: Player; ranking: Player[] };
+  general: Standing[];
+  top: number;
+  onRelaunch: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, []);
+  return (
+    <Cover top={top}>
+      <Text style={{ fontSize: 44, textAlign: 'center' }}>🏆</Text>
+      <Text style={styles.finalTitle}>{c.who.me ? 'Tu remportes le championnat !' : `${c.who.name} remporte le championnat !`}</Text>
+      <Text style={styles.finalSub}>Grande finale terminée · 500 Zems pour le champion</Text>
+      <RankList ranking={c.ranking} highlight={c.who.id} />
+      <Text style={styles.sectionTitle}>📊 Classement des rondes</Text>
+      <StandingsList general={general} limit={8} />
+      <Pressable onPress={onRelaunch}>
+        <LinearGradient colors={goldGradient} style={styles.replay}>
+          <Ionicons name="refresh" size={18} color={INK} />
+          <Text style={styles.replayText}>Nouveau championnat</Text>
+        </LinearGradient>
+      </Pressable>
+      <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
+        <Text style={styles.quitText}>Terminer le live</Text>
       </Pressable>
     </Cover>
   );
@@ -1942,6 +2307,27 @@ const styles = StyleSheet.create({
   modeTitle: { color: '#fff', fontSize: 16, fontWeight: '900' },
   modeDesc: { color: 'rgba(255,255,255,0.75)', fontSize: 12.5, marginTop: 2, lineHeight: 17 },
   soon: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '800' },
+
+  // championnat
+  sizeNum: { width: 44, textAlign: 'center', color: GOLD, fontSize: 28, fontWeight: '900', fontFamily: 'Georgia' },
+  rulesBox: { marginTop: 4, padding: 12, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)' },
+  rulesText: { color: 'rgba(255,255,255,0.8)', fontSize: 12.5, lineHeight: 19 },
+  signGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 10, marginBottom: 4 },
+  signCell: { width: '20%', alignItems: 'center' },
+  signAv: { width: 46, height: 46, borderRadius: 23, borderWidth: 1.5, borderColor: PURPLE },
+  signEmpty: { borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.3)', backgroundColor: 'rgba(255,255,255,0.04)' },
+  signName: { color: '#fff', fontSize: 11, fontWeight: '800', marginTop: 3, maxWidth: '92%' },
+  sectionTitle: { color: GOLD, fontSize: 14, fontWeight: '900', marginTop: 10, marginBottom: 6 },
+  rankSmall: { color: 'rgba(255,255,255,0.55)', fontSize: 11.5, fontWeight: '700' },
+  stRow: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 38, paddingHorizontal: 8, borderRadius: 10, marginBottom: 3 },
+  stHi: { backgroundColor: 'rgba(139,92,246,0.18)' },
+  stMe: { backgroundColor: 'rgba(233,185,73,0.16)', borderWidth: 1, borderColor: 'rgba(233,185,73,0.6)' },
+  stPos: { width: 22, textAlign: 'center', color: '#fff', fontSize: 14, fontWeight: '900' },
+  stAv: { width: 26, height: 26, borderRadius: 13 },
+  stName: { flex: 1, color: '#fff', fontSize: 13.5, fontWeight: '800' },
+  stWins: { color: 'rgba(255,255,255,0.75)', fontSize: 11.5, fontWeight: '800' },
+  stPts: { width: 54, textAlign: 'right', color: GOLD, fontSize: 14, fontWeight: '900' },
+  stDots: { color: 'rgba(255,255,255,0.4)', textAlign: 'center', fontSize: 10, marginVertical: 1 },
   upBox: { marginTop: 8, padding: 12, borderRadius: 14, backgroundColor: 'rgba(61,220,151,0.1)', borderWidth: 1, borderColor: 'rgba(61,220,151,0.4)' },
   upTitle: { color: GREEN, fontSize: 13.5, fontWeight: '900' },
   upAv: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: GREEN },
