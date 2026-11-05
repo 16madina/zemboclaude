@@ -83,6 +83,20 @@ function pick(bag: [string, number][]) {
 }
 
 export const LETTER_COUNT = 10;
+export const MIN_VOWELS = 3;
+export const MIN_CONSONANTS = 3;
+export const isVowel = (l: string) => 'AEIOUY'.includes(l);
+
+/** Tire une lettre du type choisi par le joueur (jamais plus de 3 fois la même voyelle, 2 fois la même consonne) */
+export function drawOne(kind: 'V' | 'C', current: string[]) {
+  const bag = kind === 'V' ? VOWELS : CONSONANTS;
+  const max = kind === 'V' ? 3 : 2;
+  for (let t = 0; t < 60; t++) {
+    const l = pick(bag);
+    if (current.filter((x) => x === l).length < max) return l;
+  }
+  return pick(bag);
+}
 
 /** Tire 10 lettres jouables : 4 ou 5 voyelles, jamais plus de 3 fois la même, et au moins un mot de 7 lettres */
 export function drawLetters() {

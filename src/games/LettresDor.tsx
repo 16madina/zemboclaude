@@ -7,16 +7,41 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurMask, Canvas, Circle, LinearGradient as SkLinear, Oval, Path, RadialGradient, Rect, Skia, vec } from '@shopify/react-native-skia';
 import { goldGradient } from '../theme';
-import { GiftGrid, LiveSlide, Sheet, Toast, faceOf, tap, useFloaters, useLiveChat, useToast, type Gift } from '../talk/LiveKit';
+import { FadeIn, GiftGrid, LiveSlide, Sheet, Toast, faceOf, tap, useFloaters, useLiveChat, useToast, type Gift } from '../talk/LiveKit';
 import { DEENA_PHOTO } from '../table/data';
 import { findPerson } from '../world/data';
 import { useSession } from '../lib/session';
-import { OPS, applyOp, botCount, botWord, drawLetters, drawNumbers, isWord, rand, solveLetters, solveNumbers, type BotLevel, type Op } from './engine';
+import {
+  LETTER_COUNT,
+  MIN_CONSONANTS,
+  MIN_VOWELS,
+  OPS,
+  applyOp,
+  botCount,
+  botWord,
+  drawNumbers,
+  drawOne,
+  isVowel,
+  isWord,
+  rand,
+  solveLetters,
+  solveNumbers,
+  type BotLevel,
+  type Op,
+} from './engine';
 
 // « Lettres d'Or Zembo » (nom provisoire) : le jeu des lettres et des chiffres en live.
-// 4 joueurs sur scène (caméra obligatoire), réponses cachées, chrono qui s'arrête quand
-// tout le monde a répondu, puis révélation. Manches : Lettres, Lettres, Chiffres.
-// Ici : toi contre 3 joueurs simulés.
+//
+// MODE TOURNOI
+// - 4 joueurs sur scène (caméra obligatoire), les autres attendent dans la file.
+// - Tour à 4 : Lettres, Lettres, Chiffres → le dernier descend.
+// - Tour à 3 : Lettres, Lettres, Chiffres → le dernier descend.
+// - Finale à 2 : Chiffres, Chiffres, Lettres → le gagnant prend une couronne.
+// - Le gagnant reste, 3 joueurs de la file montent. 5 manches de suite.
+// - Pour les lettres, les joueurs choisissent Voyelle ou Consonne chacun leur tour.
+// - Réponses cachées, chrono qui s'arrête quand tout le monde a répondu, puis révélation.
+//
+// Ici : toi + des joueurs simulés.
 
 const GOLD = '#F3D27A';
 const GOLD2 = '#E9B949';
@@ -24,56 +49,45 @@ const INK = '#1D1405';
 const NAVY = 'rgba(14,16,52,0.88)';
 const PURPLE = '#8B5CF6';
 const BLUE = '#5B7CFF';
-const ROUNDS = ['L', 'L', 'C'] as const;
+const GREEN = '#3DDC97';
 const DURATION = { L: 30, C: 40 };
 const TICK = 250;
+const MANCHES = 5;
+const CHOOSE_TIME = 3;
 
-type Player = {
-  id: string;
-  name: string;
-  photo: number | string;
-  me?: boolean;
-  level?: BotLevel;
-  score: number;
-};
+type Kind = 'L' | 'C';
+const STAGES: { n: number; label: string; rounds: Kind[] }[] = [
+  { n: 4, label: 'Tour à 4', rounds: ['L', 'L', 'C'] },
+  { n: 3, label: 'Tour à 3', rounds: ['L', 'L', 'C'] },
+  { n: 2, label: 'Finale', rounds: ['C', 'C', 'L'] },
+];
+
+type Player = { id: string; name: string; photo: number | string; me?: boolean; level: BotLevel; score: number; last: number };
 type Answer = { at: number; word?: string; value?: number; steps?: string[] };
 type RoundData =
   | { kind: 'L'; letters: string[]; sol: ReturnType<typeof solveLetters> }
-  | {
-      kind: 'C';
-      plaques: number[];
-      target: number;
-      best: number;
-      bestSteps: string[];
-      reach: Map<number, string[]>;
-    };
-type Result = {
-  id: string;
-  answer: Answer | null;
-  valid: boolean;
-  points: number;
-  dist?: number;
-  note: string;
-};
-type Phase = 'intro' | 'draw' | 'play' | 'reveal' | 'final';
+  | { kind: 'C'; plaques: number[]; target: number; best: number; bestSteps: string[]; reach: Map<number, string[]> };
+type Result = { id: string; answer: Answer | null; valid: boolean; points: number; dist?: number; note: string };
+type Phase = 'mode' | 'intro' | 'choose' | 'draw' | 'play' | 'reveal' | 'elim' | 'champion' | 'end';
+type Overlay = { who: Player; ranking: Player[]; up?: Player[] };
+type Crowns = Record<string, { n: number; p: Player }>;
 
-const BOTS: { id: string; level: BotLevel }[] = [
-  { id: 'moussa', level: { exact: 0.5, slack: [0, 1, 1, 2] } },
-  { id: 'awa', level: { exact: 0.35, slack: [0, 1, 2, 2, 3] } },
-  { id: 'kenji', level: { exact: 0.6, slack: [0, 0, 1, 2] } },
+const LEVELS: BotLevel[] = [
+  { exact: 0.5, slack: [0, 1, 1, 2] },
+  { exact: 0.35, slack: [0, 1, 2, 2, 3] },
+  { exact: 0.6, slack: [0, 0, 1, 2] },
+  { exact: 0.4, slack: [0, 1, 2] },
 ];
-const CHALLENGERS = ['chloe', 'elena', 'moussa', 'awa', 'kenji'];
+// spectateurs qui demandent à monter (simulés)
+const VIEWERS = ['Fatou', 'Yann', 'Nadia', 'Karim', 'Sophie', 'Djamal', 'Lina', 'Alex', 'Emma', 'Momo', 'Sarah', 'Kevin', 'Bintou', 'Idriss', 'Leïla', 'Malik', 'Noura', 'Jordan', 'Mariam', 'Samir'];
 
-const botPlayer = (id: string, level?: BotLevel): Player => {
+const fresh = (p: Player): Player => ({ ...p, score: 0, last: 0 });
+const nameOf = (p: Player) => (p.me ? 'Toi' : p.name);
+const worldPlayer = (id: string, level: BotLevel): Player => {
   const p = findPerson(id);
-  return {
-    id,
-    name: p?.name ?? id,
-    photo: p?.photo ?? '',
-    level: level ?? { exact: 0.45, slack: [0, 1, 2] },
-    score: 0,
-  };
+  return { id, name: p?.name ?? id, photo: p?.photo ?? '', level, score: 0, last: 0 };
 };
+const ME: Player = { id: 'me', name: 'Toi', photo: DEENA_PHOTO, me: true, level: LEVELS[0], score: 0, last: 0 };
 
 const CHAT0: [string, string][] = [
   ['Fatou', '🔥 Ce jeu est trop bien !'],
@@ -86,10 +100,10 @@ const AUTO: [string, string][] = [
   ['Sophie', 'Lettres d’Or Zembo, j’adore ! 👑'],
   ['Momo', 'Le compte est bon ?!'],
   ['Lina', 'Awa est trop forte 💯'],
-  ['Djamal', 'Je veux monter sur scène 🙋'],
   ['Alex', 'Chrono arrêté, révélation !! 👏'],
   ['Yann', 'Les réponses cachées, ça met la pression 😅'],
   ['Fatou', 'Kenji calcule trop vite 🤯'],
+  ['Emma', 'Consonne ! Consonne ! 😂'],
 ];
 const GIFTS: Gift[] = [
   { name: 'Rose', emoji: '🌹', cost: 5 },
@@ -117,24 +131,30 @@ function Game({ onClose }: { onClose: () => void }) {
   const chat = useLiveChat(CHAT0, AUTO, 3800);
   const floaters = useFloaters();
   const [giftOpen, setGiftOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const chatY = useRef(600);
   const [chatRows, setChatRows] = useState(5); // autant de messages que la place le permet
 
-  const [players, setPlayers] = useState<Player[]>(() => [
-    {
-      id: 'me',
-      name: profile?.pseudo ? `@${profile.pseudo}` : 'Toi',
-      photo: DEENA_PHOTO,
-      me: true,
-      score: 0,
-    },
-    ...BOTS.map((b) => botPlayer(b.id, b.level)),
-  ]);
-  const [round, setRound] = useState(0);
-  const [phase, setPhase] = useState<Phase>('intro');
+  // ── le tournoi ──
+  const viewerSeq = useRef(0);
+  const newViewer = () => {
+    const k = viewerSeq.current++;
+    const name = VIEWERS[k % VIEWERS.length];
+    return { id: `v${k}`, name, photo: faceOf(name, 300), level: LEVELS[k % LEVELS.length], score: 0, last: 0 } as Player;
+  };
+  const [stage, setStage] = useState<Player[]>(() => [ME, worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2])]);
+  const [queue, setQueue] = useState<Player[]>(() => Array.from({ length: 4 }, newViewer));
+  const [crowns, setCrowns] = useState<Crowns>({});
+  const [manche, setManche] = useState(1);
+  const [stageIdx, setStageIdx] = useState(0);
+  const [epreuve, setEpreuve] = useState(0);
+  const [phase, setPhase] = useState<Phase>('mode');
+  const [overlay, setOverlay] = useState<Overlay | null>(null);
+
+  // ── l'épreuve en cours ──
   const [data, setData] = useState<RoundData | null>(null);
-  const [shown, setShown] = useState(0); // éléments du tirage déjà affichés
+  const [shown, setShown] = useState(0); // plaques déjà affichées
   const [elapsed, setElapsed] = useState(0);
   const [stoppedEarly, setStoppedEarly] = useState(false);
   const botAnswers = useRef<Record<string, Answer | null>>({});
@@ -142,8 +162,10 @@ function Game({ onClose }: { onClose: () => void }) {
   const [results, setResults] = useState<Result[]>([]);
   const [revealed, setRevealed] = useState(0);
   const [nextIn, setNextIn] = useState(0);
-  const [, setGame] = useState(1);
-
+  // choix des lettres
+  const [letters, setLetters] = useState<string[]>([]);
+  const [lastPick, setLastPick] = useState<{ who: string; type: 'V' | 'C'; forced: boolean } | null>(null);
+  const [chooseLeft, setChooseLeft] = useState(CHOOSE_TIME);
   // saisie lettres
   const [picked, setPicked] = useState<number[]>([]);
   // saisie chiffres
@@ -152,57 +174,119 @@ function Game({ onClose }: { onClose: () => void }) {
   const [op, setOp] = useState<Op | null>(null);
   const [steps, setSteps] = useState<{ a: number; b: number; text: string }[]>([]);
 
-  const kind = ROUNDS[round];
+  const STAGE = STAGES[stageIdx];
+  const kind = STAGE.rounds[epreuve];
   const duration = DURATION[kind];
   const left = duration - elapsed;
+  const meOnStage = stage.some((p) => p.me);
+  const meQueued = queue.some((p) => p.me);
+  const chooser = stage[(epreuve + stageIdx + letters.length) % stage.length];
 
-  // ── 1. Intro de la manche, puis tirage ──
+  // ── des spectateurs demandent à monter de temps en temps ──
+  useEffect(() => {
+    if (phase === 'mode') return;
+    const t = setInterval(() => {
+      setQueue((q) => {
+        if (q.length >= 6) return q;
+        const v = newViewer();
+        chat.push(v.name, '🙋 demande à monter sur scène');
+        return [...q, v];
+      });
+    }, 14000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase === 'mode']);
+
+  // ── 1. Intro de l'épreuve ──
   useEffect(() => {
     if (phase !== 'intro') return;
     const t = setTimeout(() => {
-      const bots = players.filter((p) => !p.me);
-      const answers: Record<string, Answer | null> = {};
-      let d: RoundData;
-      if (kind === 'L') {
-        const { letters, solution } = drawLetters();
-        d = { kind: 'L', letters, sol: solution };
-        for (const b of bots) answers[b.id] = Math.random() < 0.05 ? null : { at: rand(8, 27), word: botWord(solution, b.level!) };
-        setPicked([]);
-      } else {
-        const { plaques, target } = drawNumbers();
-        const s = solveNumbers(plaques, target);
-        d = {
-          kind: 'C',
-          plaques,
-          target,
-          best: s.best,
-          bestSteps: s.steps,
-          reach: s.reach,
-        };
-        for (const b of bots) {
-          const c = botCount(s.reach, target, b.level!);
-          answers[b.id] = Math.random() < 0.05 ? null : { at: rand(14, 37), value: c.value, steps: c.steps };
-        }
-        setItems(plaques.map((v) => ({ v, used: false })));
-        setSel(null);
-        setOp(null);
-        setSteps([]);
-      }
-      botAnswers.current = answers;
-      setData(d);
       setMine(null);
       setElapsed(0);
       setStoppedEarly(false);
-      setShown(0);
-      setPhase('draw');
-    }, 2400);
+      setResults([]);
+      setRevealed(0);
+      setPicked([]);
+      setSel(null);
+      setOp(null);
+      setSteps([]);
+      if (kind === 'L') {
+        setData(null);
+        setLetters([]);
+        setLastPick(null);
+        setPhase('choose');
+      } else {
+        const { plaques, target } = drawNumbers();
+        const s = solveNumbers(plaques, target);
+        const answers: Record<string, Answer | null> = {};
+        for (const b of stage.filter((p) => !p.me)) {
+          const c = botCount(s.reach, target, b.level);
+          answers[b.id] = Math.random() < 0.05 ? null : { at: rand(14, 37), value: c.value, steps: c.steps };
+        }
+        botAnswers.current = answers;
+        setData({ kind: 'C', plaques, target, best: s.best, bestSteps: s.steps, reach: s.reach });
+        setItems(plaques.map((v) => ({ v, used: false })));
+        setShown(0);
+        setPhase('draw');
+      }
+    }, 2600);
     return () => clearTimeout(t);
-  }, [phase, kind, players]);
+  }, [phase, kind, stage]);
 
-  // ── 2. Les lettres / plaques apparaissent une par une ──
+  // ── 2a. Lettres : chaque joueur choisit Voyelle ou Consonne à son tour ──
+  const choose = (want: 'V' | 'C') => {
+    if (phase !== 'choose' || letters.length >= LETTER_COUNT) return;
+    const v = letters.filter(isVowel).length;
+    const c = letters.length - v;
+    const remaining = LETTER_COUNT - letters.length;
+    let type = want;
+    if (type === 'C' && v + remaining - 1 < MIN_VOWELS) type = 'V';
+    if (type === 'V' && c + remaining - 1 < MIN_CONSONANTS) type = 'C';
+    setLetters([...letters, drawOne(type, letters)]);
+    setLastPick({ who: nameOf(chooser), type, forced: type !== want });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  };
+
   useEffect(() => {
-    if (phase !== 'draw' || !data) return;
-    const total = data.kind === 'L' ? data.letters.length : data.plaques.length + 1;
+    if (phase !== 'choose') return;
+    if (letters.length >= LETTER_COUNT) {
+      // tirage complet : on cherche les solutions et on lance le chrono
+      const t = setTimeout(() => {
+        const sol = solveLetters(letters);
+        const answers: Record<string, Answer | null> = {};
+        for (const b of stage.filter((p) => !p.me)) {
+          const w = botWord(sol, b.level);
+          answers[b.id] = !w || Math.random() < 0.05 ? null : { at: rand(8, 27), word: w };
+        }
+        botAnswers.current = answers;
+        setData({ kind: 'L', letters, sol });
+        setPhase('play');
+      }, 700);
+      return () => clearTimeout(t);
+    }
+    if (!chooser.me) {
+      // joueur simulé : garde un bon équilibre voyelles / consonnes
+      const v = letters.filter(isVowel).length;
+      const wantV = v < letters.length * 0.42 ? Math.random() < 0.75 : Math.random() < 0.3;
+      const t = setTimeout(() => choose(wantV ? 'V' : 'C'), rand(800, 1400));
+      return () => clearTimeout(t);
+    }
+    setChooseLeft(CHOOSE_TIME);
+    const t = setInterval(() => setChooseLeft((x) => x - 1), 1000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, letters.length]);
+
+  // trop tard : le jeu choisit pour toi
+  useEffect(() => {
+    if (phase === 'choose' && chooser?.me && chooseLeft <= 0 && letters.length < LETTER_COUNT) choose(Math.random() < 0.45 ? 'V' : 'C');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chooseLeft]);
+
+  // ── 2b. Chiffres : les plaques apparaissent une par une ──
+  useEffect(() => {
+    if (phase !== 'draw' || !data || data.kind !== 'C') return;
+    const total = data.plaques.length + 1;
     if (shown >= total) {
       const t = setTimeout(() => setPhase('play'), 500);
       return () => clearTimeout(t);
@@ -212,7 +296,7 @@ function Game({ onClose }: { onClose: () => void }) {
         setShown((n) => n + 1);
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       },
-      data.kind === 'C' && shown === data.plaques.length ? 700 : 260,
+      shown === data.plaques.length ? 700 : 260,
     );
     return () => clearTimeout(t);
   }, [phase, data, shown]);
@@ -229,7 +313,7 @@ function Game({ onClose }: { onClose: () => void }) {
     const a = botAnswers.current[id];
     return !!a && a.at <= elapsed;
   };
-  const allAnswered = players.every((p) => answered(p.id));
+  const allAnswered = stage.every((p) => answered(p.id));
 
   useEffect(() => {
     if (phase !== 'play') return;
@@ -247,7 +331,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const myWord = data?.kind === 'L' ? picked.map((i) => data.letters[i]).join('') : '';
 
   const submit = () => {
-    if (phase !== 'play' || mine) return;
+    if (phase !== 'play' || mine || !meOnStage) return;
     if (data?.kind === 'L') {
       if (myWord.length < 2) return toast.show('Forme un mot avec les lettres');
       setMine({ at: elapsed, word: myWord });
@@ -263,8 +347,8 @@ function Game({ onClose }: { onClose: () => void }) {
     if (!data) return;
     setStoppedEarly(early);
     // sans validation, ce qui est tapé compte quand même
-    let me = mine;
-    if (!me) {
+    let me = meOnStage ? mine : null;
+    if (meOnStage && !me) {
       if (data.kind === 'L' && myWord.length >= 2) me = { at: duration, word: myWord };
       if (data.kind === 'C' && myValue !== null) me = { at: duration, value: myValue, steps: steps.map((s) => s.text) };
       if (me) setMine(me);
@@ -274,49 +358,22 @@ function Game({ onClose }: { onClose: () => void }) {
 
     let res: Result[];
     if (data.kind === 'L') {
-      res = players.map((p) => {
+      res = stage.map((p) => {
         const a = all[p.id];
-        if (!a?.word)
-          return {
-            id: p.id,
-            answer: null,
-            valid: false,
-            points: 0,
-            note: 'Pas de réponse',
-          };
+        if (!a?.word) return { id: p.id, answer: null, valid: false, points: 0, note: 'Aucune' };
         const ok = isWord(a.word);
-        return {
-          id: p.id,
-          answer: a,
-          valid: ok,
-          points: ok ? a.word.length : 0,
-          note: ok ? `${a.word.length} lettres` : 'Mot refusé',
-        };
+        return { id: p.id, answer: a, valid: ok, points: ok ? a.word.length : 0, note: ok ? `${a.word.length} lettres` : 'Mot refusé' };
       });
       res.sort((x, y) => (x.valid ? x.answer!.word!.length : -1) - (y.valid ? y.answer!.word!.length : -1));
     } else {
-      const dists = players.map((p) => (all[p.id]?.value !== undefined ? Math.abs(all[p.id]!.value! - data.target) : Infinity));
+      const dists = stage.map((p) => (all[p.id]?.value !== undefined ? Math.abs(all[p.id]!.value! - data.target) : Infinity));
       const min = Math.min(...dists);
-      res = players.map((p, i) => {
+      res = stage.map((p, i) => {
         const a = all[p.id];
-        if (!a || a.value === undefined)
-          return {
-            id: p.id,
-            answer: null,
-            valid: false,
-            points: 0,
-            note: 'Pas de réponse',
-          };
+        if (!a || a.value === undefined) return { id: p.id, answer: null, valid: false, points: 0, note: 'Aucune' };
         const d = dists[i];
         const pts = d === 0 ? 10 : d === min ? 7 : 0;
-        return {
-          id: p.id,
-          answer: a,
-          valid: true,
-          dist: d,
-          points: pts,
-          note: d === 0 ? 'Compte bon !' : `Écart ${d}`,
-        };
+        return { id: p.id, answer: a, valid: true, dist: d, points: pts, note: d === 0 ? 'Compte bon !' : `Écart ${d}` };
       });
       res.sort((x, y) => (y.dist ?? 1e9) - (x.dist ?? 1e9));
     }
@@ -337,59 +394,135 @@ function Game({ onClose }: { onClose: () => void }) {
       () => {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
         if (revealed === results.length) {
-          setPlayers((ps) =>
-            ps.map((p) => ({
-              ...p,
-              score: p.score + (results.find((r) => r.id === p.id)?.points ?? 0),
-            })),
+          setStage((ps) =>
+            ps.map((p) => {
+              const pts = results.find((r) => r.id === p.id)?.points ?? 0;
+              return { ...p, score: p.score + pts, last: pts };
+            }),
           );
-          setNextIn(round < ROUNDS.length - 1 ? 6 : 4);
+          setNextIn(5);
         }
         setRevealed((n) => n + 1);
       },
       revealed === 0 ? 900 : 1400,
     );
     return () => clearTimeout(t);
-  }, [phase, revealed, results, nextIn, round]);
+  }, [phase, revealed, results, nextIn]);
 
   useEffect(() => {
     if (phase === 'reveal' && revealed > results.length && nextIn === 0) next();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nextIn]);
 
+  // classement du tour : points, puis la dernière épreuve, puis au hasard
+  const ranked = (ps: Player[]) => [...ps].sort((a, b) => b.score - a.score || b.last - a.last || Math.random() - 0.5);
+
   const next = () => {
-    if (round < ROUNDS.length - 1) {
-      setRound(round + 1);
+    if (phase !== 'reveal') return;
+    if (epreuve < STAGE.rounds.length - 1) {
+      setEpreuve(epreuve + 1);
       setPhase('intro');
-    } else setPhase('final');
+      return;
+    }
+    const ranking = ranked(stage);
+    if (stage.length > 2) {
+      // le dernier descend de la scène
+      setOverlay({ who: ranking[ranking.length - 1], ranking });
+      setPhase('elim');
+      return;
+    }
+    // finale terminée : couronne pour le gagnant
+    const winner = ranking[0];
+    setCrowns((c) => ({ ...c, [winner.id]: { n: (c[winner.id]?.n ?? 0) + 1, p: winner } }));
+    if (manche >= MANCHES) {
+      setOverlay({ who: winner, ranking });
+      setPhase('end');
+      return;
+    }
+    const q = [...queue];
+    while (q.length < 3) q.push(newViewer());
+    setOverlay({ who: winner, ranking, up: q.slice(0, 3) });
+    setPhase('champion');
   };
 
-  const replay = () => {
-    // le dernier descend, un nouveau challenger monte (sauf toi : tu restes pour la démo)
-    const ranking = [...players].sort((a, b) => b.score - a.score);
-    const out = ranking[ranking.length - 1];
-    const ids = players.map((p) => p.id);
-    const nextId = CHALLENGERS.find((c) => !ids.includes(c));
-    setPlayers((ps) => ps.map((p) => (p.id === out.id && !p.me && nextId ? botPlayer(nextId) : { ...p, score: 0 })));
-    setGame((g) => g + 1);
-    setRound(0);
+  // élimination : le dernier descend, on passe au tour suivant
+  useEffect(() => {
+    if (phase !== 'elim' || !overlay) return;
+    const t = setTimeout(() => {
+      const out = overlay.who;
+      if (out.me) toast.show('Tu descends de la scène… Touche 🙋 pour redemander à monter.');
+      setStage((ps) => ps.filter((p) => p.id !== out.id).map(fresh));
+      setStageIdx((s) => s + 1);
+      setEpreuve(0);
+      setOverlay(null);
+      setPhase('intro');
+    }, 4500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, overlay]);
+
+  // fin de manche : le gagnant reste, 3 joueurs de la file montent
+  useEffect(() => {
+    if (phase !== 'champion' || !overlay?.up) return;
+    const t = setTimeout(() => {
+      const up = overlay.up!;
+      const ids = up.map((p) => p.id);
+      setStage([fresh(overlay.who), ...up.map(fresh)]);
+      setQueue((q) => q.filter((p) => !ids.includes(p.id)));
+      if (up.some((p) => p.me)) toast.show('À toi ! Tu montes sur scène 🎤');
+      setManche((m) => m + 1);
+      setStageIdx(0);
+      setEpreuve(0);
+      setOverlay(null);
+      setPhase('intro');
+    }, 5500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, overlay]);
+
+  const relaunch = () => {
+    const champ = overlay?.who;
+    const q = [...queue];
+    while (q.length < 3) q.push(newViewer());
+    const up = q.slice(0, 3);
+    const ids = up.map((p) => p.id);
+    setStage([fresh(champ ?? ME), ...up.map(fresh)]);
+    setQueue((cur) => cur.filter((p) => !ids.includes(p.id)));
+    setCrowns({});
+    setManche(1);
+    setStageIdx(0);
+    setEpreuve(0);
+    setOverlay(null);
     setPhase('intro');
   };
 
+  // ── file d'attente ──
+  const requestStage = () => {
+    tap();
+    if (meOnStage) return toast.show('Tu es déjà sur scène 🎤');
+    if (meQueued) {
+      setQueue((q) => q.filter((p) => !p.me));
+      return toast.show('Tu as quitté la file');
+    }
+    setQueue((q) => [...q, fresh(ME)]);
+    toast.show(`Demande envoyée : tu es n°${queue.length + 1} dans la file 🙋`);
+  };
+
   // ── saisie ──
+  const canPlay = phase === 'play' && meOnStage && !mine;
   const pickTile = (i: number) => {
-    if (phase !== 'play' || mine || picked.includes(i)) return;
+    if (!canPlay || picked.includes(i)) return;
     tap();
     setPicked([...picked, i]);
   };
   const unpick = (pos: number) => {
-    if (phase !== 'play' || mine) return;
+    if (!canPlay) return;
     tap();
     setPicked(picked.filter((_, k) => k !== pos));
   };
 
   const pressPlaque = (i: number) => {
-    if (phase !== 'play' || mine || items[i].used) return;
+    if (!canPlay || items[i].used) return;
     tap();
     if (sel === null || op === null) return setSel(sel === i ? null : i);
     if (i === sel) return;
@@ -403,9 +536,10 @@ function Game({ onClose }: { onClose: () => void }) {
     setSteps([...steps, { a: sel, b: i, text: `${a} ${op} ${b} = ${r}` }]);
     setSel(nextItems.length - 1);
     setOp(null);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   };
   const undo = () => {
-    if (phase !== 'play' || mine) return;
+    if (!canPlay) return;
     const last = steps[steps.length - 1];
     tap();
     if (!last) {
@@ -433,16 +567,23 @@ function Game({ onClose }: { onClose: () => void }) {
   };
 
   // ── mise en page ──
-  const card = (width - 24 - 3 * 8) / 4;
+  const n = stage.length;
+  const card4 = (width - 24 - 3 * 8) / 4;
+  const camW = (width - 24 - (n - 1) * 8) / n;
   const boardInner = width - 24 - 4 - 24;
   const ringSize = 60;
   const tile = Math.floor((boardInner - 9 * 4) / 10); // les 10 lettres sur une seule ligne
   const plaqueW = (boardInner - 5 * 5) / 6;
-  const ranking = [...players].sort((a, b) => b.score - a.score);
   const resultOf = (id: string) => results.find((r) => r.id === id);
   const revealedIds = results.slice(0, revealed).map((r) => r.id);
-  const ringValue = phase === 'play' ? left : phase === 'reveal' ? Math.max(0, duration - elapsed) : duration;
-  const reveal = phase === 'reveal' || phase === 'final';
+  const myChoice = phase === 'choose' && chooser?.me && letters.length < LETTER_COUNT;
+  const ringValue =
+    phase === 'play' ? left : phase === 'reveal' ? Math.max(0, duration - elapsed) : myChoice ? Math.max(0, chooseLeft) : duration;
+  const ringTotal = myChoice ? CHOOSE_TIME : duration;
+  const reveal = phase === 'reveal';
+  const showLetters = kind === 'L' && (phase === 'choose' || ((phase === 'play' || phase === 'reveal') && data?.kind === 'L'));
+  const boardLetters = phase === 'choose' ? letters : data?.kind === 'L' ? data.letters : [];
+  const lastResult = steps.length > 0 && sel === items.length - 1 && items[sel]?.made;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#07061A' }}>
@@ -476,17 +617,18 @@ function Game({ onClose }: { onClose: () => void }) {
         </Pressable>
       </View>
 
-      {/* ── manche ── */}
+      {/* ── manche / tour / épreuve ── */}
       <View style={styles.mancheRow}>
         <View style={styles.manche}>
           <View style={styles.mancheLabel}>
             <Text style={styles.mancheText}>
-              Manche {round + 1}/{ROUNDS.length}
+              Manche {manche}/{MANCHES}
             </Text>
           </View>
+          <Text style={styles.stageText}>{STAGE.label}</Text>
           <View style={styles.dots}>
-            {ROUNDS.map((_, i) => (
-              <View key={i} style={[styles.dot, i <= round && { backgroundColor: GOLD2 }]} />
+            {STAGE.rounds.map((k, i) => (
+              <View key={i} style={[styles.dot, i <= epreuve && { backgroundColor: k === 'L' ? GOLD2 : GREEN }]} />
             ))}
           </View>
         </View>
@@ -505,96 +647,148 @@ function Game({ onClose }: { onClose: () => void }) {
           </View>
 
           <View style={{ marginTop: 8 }}>
-            <View>
-              {phase === 'intro' && <IntroText round={round} kind={kind} />}
+            {(phase === 'intro' || phase === 'mode' || phase === 'elim' || phase === 'champion' || phase === 'end') && (
+              <IntroText epreuve={epreuve} stageLabel={STAGE.label} kind={kind} />
+            )}
 
-              {data?.kind === 'L' && phase !== 'intro' && (
-                <View style={styles.tiles}>
-                  {data.letters.map((l, i) => {
-                    const used = picked.includes(i) || !!mine || reveal;
+            {/* lettres : 10 tuiles sur une ligne */}
+            {showLetters && (
+              <View style={styles.tiles}>
+                {Array.from({ length: LETTER_COUNT }).map((_, i) => {
+                  const l = boardLetters[i];
+                  if (!l) return <View key={i} style={[styles.tile, styles.tileEmpty, { width: tile, height: 46 }]} />;
+                  const used = picked.includes(i) || !!mine || reveal || !meOnStage || phase === 'choose';
+                  const dim = phase === 'play' && (picked.includes(i) || !!mine);
+                  return (
+                    <Pressable key={i} onPress={() => pickTile(i)} disabled={!canPlay}>
+                      <LinearGradient
+                        colors={dim || reveal ? ['#4A3A1C', '#2B2210'] : isVowel(l) && phase === 'choose' ? ['#FFF6D0', '#F6D36A', '#C99A2E'] : ['#FFF0B0', '#F3C14B', '#B98318']}
+                        style={[styles.tile, { width: tile, height: 46 }]}
+                      >
+                        <Text style={[styles.tileText, { fontSize: Math.min(24, tile * 0.68) }, (dim || reveal) && used && { color: 'rgba(243,210,122,0.5)' }]}>{l}</Text>
+                      </LinearGradient>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* chiffres : nombre à trouver, plaques, résultats */}
+            {kind === 'C' && data?.kind === 'C' && (phase === 'draw' || phase === 'play' || phase === 'reveal') && (
+              <View>
+                <View style={styles.targetRow}>
+                  <Text style={styles.targetLabel}>À TROUVER</Text>
+                  <Text style={styles.target}>{shown > data.plaques.length || phase !== 'draw' ? data.target : '???'}</Text>
+                </View>
+                <View style={styles.plaques}>
+                  {data.plaques.map((v, i) => {
                     const visible = i < shown || phase !== 'draw';
+                    const x = phase === 'play' && meOnStage ? items[i] : { v, used: false };
                     return (
-                      <Pressable key={i} onPress={() => pickTile(i)} disabled={!visible}>
-                        {visible ? (
-                          <LinearGradient
-                            colors={used ? ['#4A3A1C', '#2B2210'] : ['#FFF0B0', '#F3C14B', '#B98318']}
-                            style={[styles.tile, { width: tile, height: 46 }]}
-                          >
-                            <Text style={[styles.tileText, { fontSize: Math.min(24, tile * 0.68) }, used && { color: 'rgba(243,210,122,0.5)' }]}>{l}</Text>
-                          </LinearGradient>
-                        ) : (
-                          <View style={[styles.tile, styles.tileEmpty, { width: tile, height: 46 }]} />
-                        )}
+                      <Pressable key={i} onPress={() => pressPlaque(i)} disabled={!visible || !canPlay || x.used}>
+                        <View style={[styles.plaque, { width: plaqueW }, x.used && styles.plaqueUsed, sel === i && canPlay && styles.plaqueSel, !visible && styles.tileEmpty]}>
+                          <Text style={[styles.plaqueText, x.used && styles.plaqueTextUsed]}>{visible ? x.v : ''}</Text>
+                        </View>
                       </Pressable>
                     );
                   })}
                 </View>
-              )}
-
-              {data?.kind === 'C' && phase !== 'intro' && (
-                <View>
-                  <View style={styles.targetRow}>
-                    <Text style={styles.targetLabel}>À TROUVER</Text>
-                    <Text style={styles.target}>{shown > data.plaques.length || phase !== 'draw' ? data.target : '???'}</Text>
-                  </View>
-                  <View style={styles.plaques}>
-                    {(phase === 'draw' || reveal
-                      ? data.plaques.map((v) => ({
-                          v,
-                          used: false,
-                          made: false,
-                        }))
-                      : items
-                    ).map((x, i) => {
-                      const visible = i < shown || phase !== 'draw';
-                      if (x.used) return null;
-                      const w = plaqueW;
+                {/* tes résultats, en vert */}
+                {phase === 'play' && meOnStage && items.length > 6 && (
+                  <View style={styles.results}>
+                    <Text style={styles.resultsLabel}>Tes résultats</Text>
+                    {items.slice(6).map((x, k) => {
+                      const i = k + 6;
                       return (
-                        <Pressable key={i} onPress={() => pressPlaque(i)} disabled={!visible || reveal}>
-                          <View
-                            style={[
-                              styles.plaque,
-                              { width: w },
-                              x.made && styles.plaqueMade,
-                              sel === i && !reveal && styles.plaqueSel,
-                              !visible && styles.tileEmpty,
-                            ]}
-                          >
-                            <Text style={[styles.plaqueText, x.made && { color: INK }]}>{visible ? x.v : ''}</Text>
-                          </View>
-                        </Pressable>
+                        <FadeIn key={i}>
+                          <Pressable onPress={() => pressPlaque(i)} disabled={!canPlay || x.used}>
+                            <View style={[styles.resultChip, x.used && styles.plaqueUsed, sel === i && canPlay && styles.plaqueSel]}>
+                              <Text style={[styles.resultText, x.used && styles.plaqueTextUsed]}>{x.v}</Text>
+                            </View>
+                          </Pressable>
+                        </FadeIn>
                       );
                     })}
                   </View>
-                </View>
-              )}
-            </View>
+                )}
+                {/* la ligne de calcul, comme une calculatrice */}
+                {phase === 'play' && meOnStage && (
+                  <View style={styles.calcLine}>
+                    {mine ? (
+                      <Text style={styles.calcHint}>🔒 Compte envoyé, caché jusqu’à la révélation</Text>
+                    ) : sel !== null && op !== null ? (
+                      <Text style={styles.calcExpr}>
+                        {items[sel].v} {op} <Text style={styles.calcQ}>?</Text>
+                      </Text>
+                    ) : lastResult ? (
+                      <Text style={styles.calcExpr}>
+                        {steps[steps.length - 1].text.split(' = ')[0]} <Text style={styles.calcEq}>= {items[sel!].v}</Text>
+                      </Text>
+                    ) : sel !== null ? (
+                      <Text style={styles.calcExpr}>
+                        {items[sel].v} <Text style={styles.calcHintInline}>→ choisis + − × ÷</Text>
+                      </Text>
+                    ) : (
+                      <Text style={styles.calcHint}>Touche une plaque pour commencer</Text>
+                    )}
+                    {myValue !== null && !mine && (
+                      <Text style={[styles.calcGap, myValue === data.target && { color: GREEN }]}>
+                        {myValue === data.target ? '🎯 Compte bon' : `écart ${Math.abs(myValue - data.target)}`}
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
           </View>
 
-          {/* ligne du bas du plateau : ma saisie, ou le résultat */}
-          <View
-            style={{
-              marginTop: 10,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 10,
-            }}
-          >
-            <TimerRing size={ringSize} value={ringValue} total={duration} paused={phase === 'reveal'} />
+          {/* ligne du bas du plateau : chrono + ma saisie, ou le résultat */}
+          <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <TimerRing size={ringSize} value={ringValue} total={ringTotal} paused={phase === 'reveal'} />
             <View style={{ flex: 1 }}>
-              {(phase === 'intro' || phase === 'draw' || phase === 'final') && (
+              {(phase === 'intro' || phase === 'mode' || phase === 'elim' || phase === 'champion' || phase === 'end') && (
                 <Text style={styles.hint}>
-                  {phase === 'draw'
-                    ? kind === 'L'
-                      ? 'Tirage des lettres…'
-                      : 'Tirage des plaques…'
-                    : kind === 'L'
-                      ? `10 lettres · ${DURATION.L} s · 1 point par lettre. Réponses cachées.`
-                      : `6 plaques · ${DURATION.C} s · 10 pts si exact, 7 au plus proche.`}
+                  {kind === 'L'
+                    ? `Chacun choisit voyelle ou consonne à son tour. ${DURATION.L} s · 1 point par lettre.`
+                    : `6 plaques · ${DURATION.C} s · 10 pts si exact, 7 au plus proche.`}
                 </Text>
               )}
 
-              {phase === 'play' && data?.kind === 'L' && (
+              {phase === 'choose' &&
+                (letters.length >= LETTER_COUNT ? (
+                  <Text style={styles.hint}>Tirage complet ! C’est parti…</Text>
+                ) : myChoice ? (
+                  <View style={styles.inputRow}>
+                    <Pressable onPress={() => choose('V')} style={{ flex: 1 }}>
+                      <LinearGradient colors={['#FFF6D0', '#F6D36A', '#C99A2E']} style={styles.vcBtn}>
+                        <Text style={styles.vcText}>Voyelle</Text>
+                      </LinearGradient>
+                    </Pressable>
+                    <Pressable onPress={() => choose('C')} style={{ flex: 1 }}>
+                      <LinearGradient colors={['#B79CFF', '#7C4DFF', '#4B2BB8']} style={styles.vcBtn}>
+                        <Text style={[styles.vcText, { color: '#fff' }]}>Consonne</Text>
+                      </LinearGradient>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View>
+                    <Text style={styles.hint}>
+                      <Text style={{ color: GOLD, fontWeight: '900' }}>{nameOf(chooser)}</Text> choisit : voyelle ou consonne ?
+                    </Text>
+                    {lastPick && (
+                      <Text style={styles.pickNote}>
+                        {lastPick.who} → {lastPick.type === 'V' ? 'Voyelle' : 'Consonne'}
+                        {lastPick.forced ? ' (imposée)' : ''}
+                      </Text>
+                    )}
+                  </View>
+                ))}
+
+              {phase === 'draw' && <Text style={styles.hint}>Tirage des plaques…</Text>}
+
+              {phase === 'play' && !meOnStage && <Text style={styles.hint}>Tu regardes. Touche 🙋 en bas pour demander à monter sur scène.</Text>}
+
+              {phase === 'play' && meOnStage && data?.kind === 'L' && (
                 <View style={styles.inputRow}>
                   <View style={styles.strip}>
                     {picked.length === 0 ? (
@@ -617,7 +811,7 @@ function Game({ onClose }: { onClose: () => void }) {
                 </View>
               )}
 
-              {phase === 'play' && data?.kind === 'C' && (
+              {phase === 'play' && meOnStage && data?.kind === 'C' && (
                 <View style={styles.inputRow}>
                   {OPS.map((o) => (
                     <Pressable
@@ -638,22 +832,16 @@ function Game({ onClose }: { onClose: () => void }) {
                   <SubmitBtn done={!!mine} onPress={submit} small />
                 </View>
               )}
-              {phase === 'play' && data?.kind === 'C' && myValue !== null && !mine && (
-                <Text style={styles.myCount}>
-                  Ton compte : {myValue} {myValue === data.target ? '🎯' : `· écart ${Math.abs(myValue - data.target)}`}
-                </Text>
-              )}
 
               {phase === 'reveal' && data && (
                 <View style={styles.revealLine}>
                   <View style={{ flex: 1 }}>
                     {revealed <= results.length ? (
-                      <Text style={styles.revealMsg}>
-                        {stoppedEarly ? 'Tout le monde a répondu : chrono arrêté ! Révélation…' : 'Temps écoulé ! Révélation…'}
-                      </Text>
+                      <Text style={styles.revealMsg}>{stoppedEarly ? 'Tout le monde a répondu : chrono arrêté ! Révélation…' : 'Temps écoulé ! Révélation…'}</Text>
                     ) : data.kind === 'L' ? (
                       <Text style={styles.revealMsg} numberOfLines={2}>
-                        Meilleur mot : <Text style={{ color: GOLD, fontWeight: '900' }}>{data.sol.words[0]}</Text> ({data.sol.words[0]?.length} lettres)
+                        Meilleur mot : <Text style={{ color: GOLD, fontWeight: '900' }}>{data.sol.words[0] ?? '—'}</Text>
+                        {data.sol.words[0] ? ` (${data.sol.words[0].length} lettres)` : ''}
                       </Text>
                     ) : (
                       <Text style={[styles.revealMsg, { fontSize: 11.5 }]} numberOfLines={2}>
@@ -675,29 +863,41 @@ function Game({ onClose }: { onClose: () => void }) {
         </View>
       </View>
 
-      {/* ── les 4 joueurs (caméras) ── */}
+      {/* ── les joueurs sur scène (caméras) ── */}
       <View style={styles.players}>
-        {players.map((p) => {
-          const lead = ranking[0].id === p.id && ranking[0].score > ranking[1].score;
+        {stage.map((p) => {
           const r = resultOf(p.id);
           const flash = phase === 'reveal' && revealedIds.includes(p.id) && !!r?.points;
+          const choosing = phase === 'choose' && letters.length < LETTER_COUNT && chooser?.id === p.id;
+          const crown = crowns[p.id]?.n ?? 0;
           return (
-            <View key={p.id} style={[styles.cam, { width: card, height: card * 1.4 }, p.me && styles.camMe, flash && styles.camFlash]}>
-              <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
-              <LinearGradient colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']} locations={[0.45, 0.75, 1]} style={StyleSheet.absoluteFill} />
-              {lead && <Text style={styles.camCrown}>👑</Text>}
-              <View style={styles.camDot} />
-              <View style={styles.camBottom}>
-                <Text style={styles.camName} numberOfLines={1}>
-                  {p.me ? 'Toi' : p.name}
-                </Text>
-                <LinearGradient colors={['#FFE89A', '#E9B949', '#B98318']} style={styles.ptsPill}>
-                  <Text style={styles.ptsText}>
-                    {p.score}
-                    <Text style={{ fontSize: 10 }}> pts</Text>
+            <View key={p.id} style={{ width: camW }}>
+              <View style={[styles.cam, { height: card4 * 1.4 }, p.me && styles.camMe, (flash || choosing) && styles.camFlash]}>
+                <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
+                <LinearGradient colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']} locations={[0.45, 0.75, 1]} style={StyleSheet.absoluteFill} />
+                <View style={styles.camDot} />
+                {choosing && (
+                  <View style={styles.choosingTag}>
+                    <Text style={styles.choosingText}>À son tour</Text>
+                  </View>
+                )}
+                <View style={styles.camBottom}>
+                  <Text style={styles.camName} numberOfLines={1}>
+                    {nameOf(p)}
                   </Text>
-                </LinearGradient>
+                  <LinearGradient colors={['#FFE89A', '#E9B949', '#B98318']} style={styles.ptsPill}>
+                    <Text style={styles.ptsText}>
+                      {p.score}
+                      <Text style={{ fontSize: 10 }}> pts</Text>
+                    </Text>
+                  </LinearGradient>
+                </View>
               </View>
+              {crown > 0 && (
+                <View style={styles.crownPill} pointerEvents="none">
+                  <Text style={styles.crownText}>👑 {crown}</Text>
+                </View>
+              )}
             </View>
           );
         })}
@@ -713,19 +913,19 @@ function Game({ onClose }: { onClose: () => void }) {
             </View>
           </View>
           <View style={styles.slots}>
-            {players.map((p) => {
+            {stage.map((p) => {
               const r = resultOf(p.id);
               const isOpen = phase === 'reveal' && revealedIds.includes(p.id);
               const did = phase === 'play' ? answered(p.id) : phase === 'reveal';
               return (
-                <View key={p.id} style={[styles.slot, { width: card - 6 }, did && !isOpen && styles.slotDone, isOpen && r?.points ? styles.slotWin : null]}>
+                <View key={p.id} style={[styles.slot, { width: camW - 6 }, did && !isOpen && styles.slotDone, isOpen && r?.points ? styles.slotWin : null]}>
                   {isOpen && r ? (
                     <>
                       <Text style={[styles.slotAnswer, !r.valid && !!r.answer && styles.slotBad]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
                         {r.answer ? (data?.kind === 'L' ? r.answer.word : r.answer.value) : '—'}
                       </Text>
                       <Text style={[styles.slotPts, !r.points && { color: 'rgba(255,255,255,0.5)' }]} numberOfLines={1}>
-                        {r.points ? `+${r.points}` : r.answer ? r.note : 'Aucune'}
+                        {r.points ? `+${r.points}` : r.note}
                       </Text>
                     </>
                   ) : (
@@ -798,16 +998,53 @@ function Game({ onClose }: { onClose: () => void }) {
           >
             <Text style={{ fontSize: 20 }}>🌹</Text>
           </RoundGold>
-          <RoundGold onPress={hearts}>
-            <Text style={{ fontSize: 20 }}>👍</Text>
-          </RoundGold>
+          <View>
+            <RoundGold onPress={() => setQueueOpen(true)}>
+              <Text style={{ fontSize: 20 }}>🙋</Text>
+            </RoundGold>
+            {queue.length > 0 && (
+              <View style={styles.badge} pointerEvents="none">
+                <Text style={styles.badgeText}>{queue.length}</Text>
+              </View>
+            )}
+          </View>
         </View>
       </KeyboardAvoidingView>
 
       {floaters.layer}
 
-      {/* ── fin de partie ── */}
-      {phase === 'final' && <Final ranking={ranking} onReplay={replay} onClose={onClose} top={T + 150} />}
+      {/* ── écrans par-dessus : mode, élimination, fin de manche, fin du tournoi ── */}
+      {phase === 'mode' && <ModePicker top={T + 120} onTournament={() => setPhase('intro')} onClose={onClose} />}
+      {phase === 'elim' && overlay && <ElimCard o={overlay} top={T + 150} />}
+      {phase === 'champion' && overlay && <ChampionCard o={overlay} manche={manche} crowns={crowns} top={T + 130} />}
+      {phase === 'end' && overlay && <EndCard o={overlay} crowns={crowns} top={T + 110} onRelaunch={relaunch} onClose={onClose} />}
+
+      <Sheet open={queueOpen} onClose={() => setQueueOpen(false)} title="File d’attente" subtitle="Les prochains à monter sur scène">
+        <ScrollView style={{ maxHeight: 300 }}>
+          {queue.length === 0 && <Text style={styles.queueEmpty}>Personne dans la file pour l’instant.</Text>}
+          {queue.map((p, i) => (
+            <View key={p.id} style={styles.queueRow}>
+              <Text style={styles.queuePos}>{i + 1}</Text>
+              <Image source={p.photo} style={styles.rankAv} />
+              <Text style={styles.queueName}>{nameOf(p)}</Text>
+              {i < 3 && <Text style={styles.queueNext}>prochain</Text>}
+            </View>
+          ))}
+        </ScrollView>
+        <Pressable
+          onPress={() => {
+            requestStage();
+            setQueueOpen(false);
+          }}
+          disabled={meOnStage}
+        >
+          <LinearGradient colors={meOnStage ? ['#3A2E18', '#2A2010'] : goldGradient} style={styles.replay}>
+            <Text style={[styles.replayText, meOnStage && { color: GOLD }]}>
+              {meOnStage ? 'Tu es sur scène 🎤' : meQueued ? 'Quitter la file' : '🙋 Demander à monter'}
+            </Text>
+          </LinearGradient>
+        </Pressable>
+      </Sheet>
 
       <Sheet open={giftOpen} onClose={() => setGiftOpen(false)} title="Envoyer un cadeau" subtitle="Soutiens tes joueurs préférés">
         <GiftGrid
@@ -916,17 +1153,12 @@ function TimerRing({ size, value, total, paused }: { size: number; value: number
   );
 }
 
-function IntroText({ round, kind }: { round: number; kind: 'L' | 'C' }) {
+function IntroText({ epreuve, stageLabel, kind }: { epreuve: number; stageLabel: string; kind: Kind }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     v.setValue(0);
-    Animated.timing(v, {
-      toValue: 1,
-      duration: 450,
-      easing: Easing.out(Easing.back(1.6)),
-      useNativeDriver: true,
-    }).start();
-  }, [round, v]);
+    Animated.timing(v, { toValue: 1, duration: 450, easing: Easing.out(Easing.back(1.6)), useNativeDriver: true }).start();
+  }, [epreuve, stageLabel, v]);
   return (
     <Animated.View
       style={{
@@ -934,66 +1166,147 @@ function IntroText({ round, kind }: { round: number; kind: 'L' | 'C' }) {
         justifyContent: 'center',
         alignItems: 'center',
         opacity: v,
-        transform: [
-          {
-            scale: v.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0.85, 1],
-            }),
-          },
-        ],
+        transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
       }}
     >
-      <Text style={styles.introSmall}>MANCHE {round + 1}</Text>
+      <Text style={styles.introSmall}>
+        {stageLabel.toUpperCase()} · ÉPREUVE {epreuve + 1}/3
+      </Text>
       <Text style={styles.introBig}>{kind === 'L' ? 'Le mot le plus long' : 'Le compte est bon'}</Text>
     </Animated.View>
   );
 }
 
-function Final({ ranking, onReplay, onClose, top }: { ranking: Player[]; onReplay: () => void; onClose: () => void; top: number }) {
-  const out = ranking[ranking.length - 1];
-  const win = ranking[0];
+function Cover({ top, children }: { top: number; children: React.ReactNode }) {
+  return (
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,4,20,0.72)', zIndex: 30 }]}>
+      <ScrollView contentContainerStyle={{ paddingTop: top, paddingHorizontal: 16, paddingBottom: 40 }}>
+        <FadeIn style={styles.finalCard}>{children}</FadeIn>
+      </ScrollView>
+    </View>
+  );
+}
+
+// Au lancement : choisir le mode de jeu
+function ModePicker({ top, onTournament, onClose }: { top: number; onTournament: () => void; onClose: () => void }) {
+  return (
+    <Cover top={top}>
+      <Text style={styles.finalTitle}>Lance ton live</Text>
+      <Text style={styles.finalSub}>Quel mode de jeu veux-tu ?</Text>
+      <Pressable onPress={onTournament}>
+        <View style={[styles.modeRow, styles.modeRowOn]}>
+          <Text style={{ fontSize: 30 }}>🏆</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.modeTitle}>Tournoi</Text>
+            <Text style={styles.modeDesc}>4 joueurs. Le dernier descend à chaque tour, jusqu’au gagnant. 5 manches.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={GOLD} />
+        </View>
+      </Pressable>
+      <View style={[styles.modeRow, { opacity: 0.55 }]}>
+        <Text style={{ fontSize: 30 }}>👥</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.modeTitle}>Groupe</Text>
+          <Text style={styles.modeDesc}>Bientôt disponible.</Text>
+        </View>
+        <Text style={styles.soon}>Bientôt</Text>
+      </View>
+      <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 8, padding: 6 }}>
+        <Text style={styles.quitText}>Annuler</Text>
+      </Pressable>
+    </Cover>
+  );
+}
+
+function RankList({ ranking, crowns, highlight, out }: { ranking: Player[]; crowns?: Crowns; highlight?: string; out?: string }) {
+  return (
+    <>
+      {ranking.map((p, i) => (
+        <View key={p.id} style={[styles.rankRow, p.id === highlight && styles.rankWin, p.id === out && { opacity: 0.55 }]}>
+          <Text style={styles.rankPos}>{i + 1}</Text>
+          <Image source={p.photo} style={styles.rankAv} />
+          <Text style={styles.rankName}>
+            {nameOf(p)}
+            {crowns?.[p.id] ? `  👑 ${crowns[p.id].n}` : ''}
+          </Text>
+          <Text style={styles.rankScore}>{p.score} pts</Text>
+        </View>
+      ))}
+    </>
+  );
+}
+
+function ElimCard({ o, top }: { o: Overlay; top: number }) {
+  useEffect(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+  }, []);
+  return (
+    <Cover top={top}>
+      <Text style={styles.finalTitle}>⬇ {o.who.me ? 'Tu descends de la scène' : `${o.who.name} descend`}</Text>
+      <Text style={styles.finalSub}>Le moins de points du tour. Les autres continuent !</Text>
+      <RankList ranking={o.ranking} out={o.who.id} />
+    </Cover>
+  );
+}
+
+function ChampionCard({ o, manche, crowns, top }: { o: Overlay; manche: number; crowns: Crowns; top: number }) {
+  const n = crowns[o.who.id]?.n ?? 1;
   useEffect(() => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,4,20,0.72)', zIndex: 30 }]}>
-      <ScrollView
-        contentContainerStyle={{
-          paddingTop: top,
-          paddingHorizontal: 16,
-          paddingBottom: 40,
-        }}
-      >
-        <View style={styles.finalCard}>
-          <Text style={styles.finalTitle}>{win.me ? 'Tu gagnes la partie ! 👑' : `${win.name} gagne la partie 👑`}</Text>
-          <Text style={styles.finalSub}>{win.me ? 'Tu remportes les 500 Zems 🏆' : `${win.name} remporte les 500 Zems 🏆`}</Text>
-          {ranking.map((p, i) => (
-            <View key={p.id} style={[styles.rankRow, i === 0 && styles.rankWin, i === ranking.length - 1 && { opacity: 0.6 }]}>
-              <Text style={styles.rankPos}>{i === 0 ? '👑' : i + 1}</Text>
-              <Image source={p.photo} style={styles.rankAv} />
-              <Text style={styles.rankName}>{p.me ? 'Toi' : p.name}</Text>
-              <Text style={styles.rankScore}>{p.score} pts</Text>
-            </View>
-          ))}
-          <Text style={styles.outText}>
-            ⬇{' '}
-            {out.me
-              ? 'Tu descends de la scène… Remets-toi dans la file pour retenter ta chance.'
-              : `${out.name} descend de la scène. Un challenger de la file monte.`}
-          </Text>
-          <Pressable onPress={onReplay}>
-            <LinearGradient colors={goldGradient} style={styles.replay}>
-              <Ionicons name="refresh" size={18} color={INK} />
-              <Text style={styles.replayText}>Rejouer</Text>
-            </LinearGradient>
-          </Pressable>
-          <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
-            <Text style={styles.quitText}>Quitter le live</Text>
-          </Pressable>
+    <Cover top={top}>
+      <Text style={{ fontSize: 44, textAlign: 'center' }}>👑</Text>
+      <Text style={styles.finalTitle}>{o.who.me ? `Tu gagnes la manche ${manche} !` : `${o.who.name} gagne la manche ${manche}`}</Text>
+      <Text style={styles.finalSub}>
+        {n} couronne{n > 1 ? 's' : ''} · reste sur scène pour la manche suivante
+      </Text>
+      <RankList ranking={o.ranking} crowns={crowns} highlight={o.who.id} />
+      {!!o.up?.length && (
+        <View style={styles.upBox}>
+          <Text style={styles.upTitle}>🙋 Montent sur scène</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+            {o.up.map((p) => (
+              <View key={p.id} style={{ alignItems: 'center', flex: 1 }}>
+                <Image source={p.photo} style={styles.upAv} />
+                <Text style={styles.upName} numberOfLines={1}>
+                  {nameOf(p)}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
-      </ScrollView>
-    </View>
+      )}
+    </Cover>
+  );
+}
+
+function EndCard({ o, crowns, top, onRelaunch, onClose }: { o: Overlay; crowns: Crowns; top: number; onRelaunch: () => void; onClose: () => void }) {
+  // champion du tournoi : le plus de couronnes (en cas d'égalité, le dernier gagnant)
+  const best = Math.max(0, ...Object.values(crowns).map((c) => c.n));
+  const champ = (crowns[o.who.id]?.n ?? 0) === best ? o.who : (Object.values(crowns).find((c) => c.n === best)?.p ?? o.who);
+  const champName = nameOf(champ);
+  useEffect(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, []);
+  return (
+    <Cover top={top}>
+      <Text style={{ fontSize: 44, textAlign: 'center' }}>🏆</Text>
+      <Text style={styles.finalTitle}>Fin du tournoi !</Text>
+      <Text style={styles.finalSub}>
+        {champ.me ? 'Tu remportes' : `${champName} remporte`} le tournoi avec {best} couronne{best > 1 ? 's' : ''} et les 500 Zems.
+      </Text>
+      <Text style={styles.outText}>Le dernier gagnant peut relancer le tournoi, ou l’hôte peut terminer le live.</Text>
+      <Pressable onPress={onRelaunch}>
+        <LinearGradient colors={goldGradient} style={styles.replay}>
+          <Ionicons name="refresh" size={18} color={INK} />
+          <Text style={styles.replayText}>Relancer le tournoi</Text>
+        </LinearGradient>
+      </Pressable>
+      <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
+        <Text style={styles.quitText}>Terminer le live</Text>
+      </Pressable>
+    </Cover>
   );
 }
 
@@ -1243,7 +1556,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   iconBtn: {
-    width: 36,
+    width: 33,
     height: 42,
     borderRadius: 12,
     alignItems: 'center',
@@ -1260,7 +1573,7 @@ const styles = StyleSheet.create({
   },
   submitText: { color: INK, fontSize: 14, fontWeight: '900' },
   op: {
-    width: 36,
+    width: 33,
     height: 42,
     borderRadius: 12,
     alignItems: 'center',
@@ -1544,4 +1857,104 @@ const styles = StyleSheet.create({
   },
   replayText: { color: INK, fontSize: 16, fontWeight: '900' },
   quitText: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '800' },
+
+  // tournoi : manche, choix des lettres, couronnes, file
+  stageText: { color: GOLD, fontSize: 12, fontWeight: '900', paddingLeft: 12 },
+  vcBtn: { height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  vcText: { color: INK, fontSize: 15, fontWeight: '900' },
+  pickNote: { color: 'rgba(255,255,255,0.6)', fontSize: 11.5, fontWeight: '700', marginTop: 3 },
+  choosingTag: { position: 'absolute', top: 6, left: 6, paddingHorizontal: 7, height: 20, borderRadius: 10, backgroundColor: GOLD, justifyContent: 'center' },
+  choosingText: { color: INK, fontSize: 10, fontWeight: '900' },
+  crownPill: {
+    position: 'absolute',
+    top: -12,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#15114A',
+    borderWidth: 1.5,
+    borderColor: GOLD,
+  },
+  crownText: { color: GOLD, fontSize: 12.5, fontWeight: '900' },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: '#FF2D55',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: '#fff', fontSize: 10.5, fontWeight: '900' },
+  queueEmpty: { color: 'rgba(255,255,255,0.6)', fontSize: 13, textAlign: 'center', marginVertical: 14 },
+  queueRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7 },
+  queuePos: { width: 22, textAlign: 'center', color: GOLD, fontSize: 14, fontWeight: '900' },
+  queueName: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '800' },
+  queueNext: { color: GREEN, fontSize: 11, fontWeight: '900' },
+  modeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginBottom: 10,
+  },
+  modeRowOn: { borderColor: GOLD, backgroundColor: 'rgba(233,185,73,0.14)' },
+  modeTitle: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  modeDesc: { color: 'rgba(255,255,255,0.75)', fontSize: 12.5, marginTop: 2, lineHeight: 17 },
+  soon: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '800' },
+  upBox: { marginTop: 8, padding: 12, borderRadius: 14, backgroundColor: 'rgba(61,220,151,0.1)', borderWidth: 1, borderColor: 'rgba(61,220,151,0.4)' },
+  upTitle: { color: GREEN, fontSize: 13.5, fontWeight: '900' },
+  upAv: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: GREEN },
+  upName: { color: '#fff', fontSize: 12.5, fontWeight: '800', marginTop: 4 },
+
+  // chiffres : plaques utilisées, résultats en vert, ligne de calcul
+  plaqueUsed: { opacity: 0.3, borderStyle: 'dashed' },
+  plaqueTextUsed: { textDecorationLine: 'line-through' },
+  results: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 8 },
+  resultsLabel: { color: GREEN, fontSize: 10.5, fontWeight: '900', letterSpacing: 0.5, marginRight: 2 },
+  resultChip: {
+    minWidth: 56,
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: GREEN,
+    borderWidth: 1.5,
+    borderColor: '#B6F5DA',
+    shadowColor: GREEN,
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  resultText: { color: '#06291B', fontSize: 18, fontWeight: '900' },
+  calcLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 8,
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  calcExpr: { flexShrink: 1, color: '#fff', fontSize: 19, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  calcEq: { color: GREEN },
+  calcQ: { color: 'rgba(255,255,255,0.4)' },
+  calcHint: { color: 'rgba(255,255,255,0.65)', fontSize: 12.5 },
+  calcHintInline: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '700' },
+  calcGap: { color: GOLD, fontSize: 12, fontWeight: '900' },
 });
