@@ -28,3 +28,12 @@ Puis scanner le QR code avec l'app Expo Go sur l'iPhone.
 ## Crédits
 
 La liste de mots de Lettres d'Or (`src/games/words.ts`) vient de [Lexique 3.83](http://www.lexique.org) (New, Pallier et al.), sous licence [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
+## Caméras et micros (LiveKit)
+
+Les lives utilisent [LiveKit](https://livekit.io) (projet « Zembo Natif ») pour la vidéo en direct.
+
+- `src/live/media.tsx` : connexion à la salle, caméra et micro. Les joueurs sur scène diffusent, les autres regardent. Dans Lettres d'Or, les micros se coupent pendant le chrono.
+- `functions/index.js` : fonction Firebase `livekitToken`, qui donne à un membre connecté son code d'accès (sur scène ou spectateur). Les clés LiveKit sont des secrets Firebase (`LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`), jamais dans l'app.
+- Expo Go n'a pas le module vidéo : l'app y marche sans vraie caméra. Pour les vraies caméras, il faut une version installable : `npx eas-cli build --profile development`.
+

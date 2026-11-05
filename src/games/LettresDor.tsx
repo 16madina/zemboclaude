@@ -11,6 +11,8 @@ import { FadeIn, GiftGrid, LiveSlide, Sheet, Toast, faceOf, tap, useFloaters, us
 import { DEENA_PHOTO } from '../table/data';
 import { findPerson } from '../world/data';
 import { useSession } from '../lib/session';
+import { auth } from '../lib/firebase';
+import { CameraFeed, CameraPreview, mediaAvailable, useLiveMedia } from '../live/media';
 import {
   LETTER_COUNT,
   MIN_CONSONANTS,
@@ -239,6 +241,20 @@ function Game({ onClose }: { onClose: () => void }) {
   const meQueued = queue.some((p) => p.me);
   const chooser = stage[(epreuve + stageIdx + letters.length) % stage.length];
   const nextChooser = letters.length + 1 < LETTER_COUNT ? stage[(epreuve + stageIdx + letters.length + 1) % stage.length] : null;
+
+  // ── caméras et micros (LiveKit) : ta caméra est diffusée quand tu es sur scène,
+  // les micros se coupent pendant le chrono pour ne pas gâcher les réponses cachées ──
+  const liveRoom = mediaAvailable && phase !== 'mode' && auth.currentUser ? `lettres-${auth.currentUser.uid}` : null;
+  const media = useLiveMedia(liveRoom, {
+    publish: meOnStage && !['mode', 'size', 'signup'].includes(phase),
+    mic: phase !== 'play',
+    name: profile?.pseudo,
+  });
+  const micsOff = phase === 'play';
+  useEffect(() => {
+    if (media.status === 'error') toast.show('Caméra indisponible pour le moment. Le jeu continue.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media.status]);
 
   // ── championnat : ta place, la prochaine table ──
   const nextTable = group && !isFinal && tableIdx + 1 < tables.length ? tables[tableIdx + 1] : null;
@@ -1130,8 +1146,14 @@ function Game({ onClose }: { onClose: () => void }) {
             <View key={p.id} style={{ width: camW }}>
               <View style={[styles.cam, { height: card4 * 1.6 }, p.me && styles.camMe, (flash || choosing) && styles.camFlash]}>
                 <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
+                {p.me && <CameraFeed trackRef={media.cameraOf('me')} mirror style={StyleSheet.absoluteFill} />}
                 <LinearGradient colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']} locations={[0.45, 0.75, 1]} style={StyleSheet.absoluteFill} />
                 <View style={styles.camDot} />
+                {micsOff && (
+                  <View style={styles.micOff} pointerEvents="none">
+                    <Ionicons name="mic-off" size={12} color="#fff" />
+                  </View>
+                )}
                 {phase === 'choose' && lastPick?.whoId === p.id && (
                   <FadeIn key={letters.length} style={[styles.pickBubble, lastPick.type === 'V' ? styles.pickV : styles.pickC]} pointerEvents="none">
                     <Text style={[styles.pickBubbleText, lastPick.type === 'C' && { color: '#fff' }]}>{lastPick.type === 'V' ? 'Voyelle !' : 'Consonne !'}</Text>
@@ -1311,6 +1333,7 @@ function Game({ onClose }: { onClose: () => void }) {
         <FadeIn style={[styles.callCard, { top: answersTop - 8 }]}>
           <View style={styles.callCam}>
             <Image source={DEENA_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
+            <CameraPreview active={callUp} style={StyleSheet.absoluteFill} />
             <View style={styles.camDot} />
             <Text style={styles.callCamText}>📷</Text>
           </View>
@@ -2461,6 +2484,17 @@ const styles = StyleSheet.create({
   lgNextText: { color: '#C9B8FF', fontSize: 12, fontWeight: '900', marginRight: 6 },
   lgNextAv: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#15114A' },
   lgNextNames: { flex: 1, color: 'rgba(255,255,255,0.7)', fontSize: 11.5, fontWeight: '700', marginLeft: 6 },
+  micOff: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   callCard: {
     position: 'absolute',
     left: 12,

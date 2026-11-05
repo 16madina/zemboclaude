@@ -47,6 +47,17 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // Lives (vidéo LiveKit) : le document est créé par le serveur (fonction livekitToken).
+    // Tout membre connecté peut le lire ; seul l'hôte peut changer qui est sur scène.
+    match /lives/{room} {
+      allow read: if signedIn();
+      allow update: if signedIn() && request.auth.uid == resource.data.host
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stage'])
+        && request.resource.data.stage is list
+        && request.resource.data.stage.size() <= 8;
+      allow create, delete: if false;
+    }
+
     // Tout le reste est fermé par défaut
     match /{document=**} {
       allow read, write: if false;

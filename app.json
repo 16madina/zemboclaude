@@ -33,7 +33,15 @@
           "photosPermission": "Zembo a besoin de tes photos pour ton profil World Room."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "@livekit/react-native-expo-plugin",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Zembo utilise ta caméra pour te montrer en direct quand tu montes sur scène.",
+          "microphonePermission": "Zembo utilise ton micro pour que tu parles en direct pendant les lives."
+        }
+      ]
     ],
     "backgroundColor": "#0A0806",
     "splash": {
