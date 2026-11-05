@@ -53,7 +53,7 @@ const GREEN = '#3DDC97';
 const DURATION = { L: 30, C: 40 };
 const TICK = 250;
 const MANCHES = 5;
-const CHOOSE_TIME = 3;
+const CHOOSE_TIME = 6;
 
 type Kind = 'L' | 'C';
 const STAGES: { n: number; label: string; rounds: Kind[] }[] = [
@@ -164,7 +164,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const [nextIn, setNextIn] = useState(0);
   // choix des lettres
   const [letters, setLetters] = useState<string[]>([]);
-  const [lastPick, setLastPick] = useState<{ who: string; type: 'V' | 'C'; forced: boolean } | null>(null);
+  const [lastPick, setLastPick] = useState<{ who: string; whoId: string; type: 'V' | 'C'; forced: boolean } | null>(null);
   const [chooseLeft, setChooseLeft] = useState(CHOOSE_TIME);
   // saisie lettres
   const [picked, setPicked] = useState<number[]>([]);
@@ -181,6 +181,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const meOnStage = stage.some((p) => p.me);
   const meQueued = queue.some((p) => p.me);
   const chooser = stage[(epreuve + stageIdx + letters.length) % stage.length];
+  const nextChooser = letters.length + 1 < LETTER_COUNT ? stage[(epreuve + stageIdx + letters.length + 1) % stage.length] : null;
 
   // ── des spectateurs demandent à monter de temps en temps ──
   useEffect(() => {
@@ -243,7 +244,7 @@ function Game({ onClose }: { onClose: () => void }) {
     if (type === 'C' && v + remaining - 1 < MIN_VOWELS) type = 'V';
     if (type === 'V' && c + remaining - 1 < MIN_CONSONANTS) type = 'C';
     setLetters([...letters, drawOne(type, letters)]);
-    setLastPick({ who: nameOf(chooser), type, forced: type !== want });
+    setLastPick({ who: nameOf(chooser), whoId: chooser.id, type, forced: type !== want });
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
@@ -271,6 +272,8 @@ function Game({ onClose }: { onClose: () => void }) {
       const t = setTimeout(() => choose(wantV ? 'V' : 'C'), rand(800, 1400));
       return () => clearTimeout(t);
     }
+    // c'est ton tour : vibration pour te prévenir
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     setChooseLeft(CHOOSE_TIME);
     const t = setInterval(() => setChooseLeft((x) => x - 1), 1000);
     return () => clearInterval(t);
@@ -758,7 +761,9 @@ function Game({ onClose }: { onClose: () => void }) {
                 (letters.length >= LETTER_COUNT ? (
                   <Text style={styles.hint}>Tirage complet ! C’est parti…</Text>
                 ) : myChoice ? (
-                  <View style={styles.inputRow}>
+                  <View>
+                    <Text style={styles.myTurn}>À toi ! Voyelle ou consonne ?</Text>
+                    <View style={styles.inputRow}>
                     <Pressable onPress={() => choose('V')} style={{ flex: 1 }}>
                       <LinearGradient colors={['#FFF6D0', '#F6D36A', '#C99A2E']} style={styles.vcBtn}>
                         <Text style={styles.vcText}>Voyelle</Text>
@@ -770,10 +775,12 @@ function Game({ onClose }: { onClose: () => void }) {
                       </LinearGradient>
                     </Pressable>
                   </View>
+                  </View>
                 ) : (
                   <View>
                     <Text style={styles.hint}>
-                      <Text style={{ color: GOLD, fontWeight: '900' }}>{nameOf(chooser)}</Text> choisit : voyelle ou consonne ?
+                      <Text style={{ color: GOLD, fontWeight: '900' }}>{nameOf(chooser)}</Text> choisit…
+                      {nextChooser ? <Text style={styles.nextUp}>{`  ·  ensuite : ${nameOf(nextChooser)}`}</Text> : null}
                     </Text>
                     {lastPick && (
                       <Text style={styles.pickNote}>
@@ -876,9 +883,14 @@ function Game({ onClose }: { onClose: () => void }) {
                 <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
                 <LinearGradient colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']} locations={[0.45, 0.75, 1]} style={StyleSheet.absoluteFill} />
                 <View style={styles.camDot} />
+                {phase === 'choose' && lastPick?.whoId === p.id && (
+                  <FadeIn key={letters.length} style={[styles.pickBubble, lastPick.type === 'V' ? styles.pickV : styles.pickC]} pointerEvents="none">
+                    <Text style={[styles.pickBubbleText, lastPick.type === 'C' && { color: '#fff' }]}>{lastPick.type === 'V' ? 'Voyelle !' : 'Consonne !'}</Text>
+                  </FadeIn>
+                )}
                 {choosing && (
                   <View style={styles.choosingTag}>
-                    <Text style={styles.choosingText}>À son tour</Text>
+                    <Text style={styles.choosingText}>{p.me ? 'À toi !' : 'À son tour'}</Text>
                   </View>
                 )}
                 <View style={styles.camBottom}>
@@ -1957,4 +1969,10 @@ const styles = StyleSheet.create({
   calcHint: { color: 'rgba(255,255,255,0.65)', fontSize: 12.5 },
   calcHintInline: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '700' },
   calcGap: { color: GOLD, fontSize: 12, fontWeight: '900' },
+  myTurn: { color: GOLD, fontSize: 14, fontWeight: '900', marginBottom: 6 },
+  nextUp: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '700' },
+  pickBubble: { position: 'absolute', top: '32%', alignSelf: 'center', paddingHorizontal: 10, height: 26, borderRadius: 13, justifyContent: 'center' },
+  pickV: { backgroundColor: GOLD },
+  pickC: { backgroundColor: PURPLE },
+  pickBubbleText: { color: INK, fontSize: 12.5, fontWeight: '900' },
 });
