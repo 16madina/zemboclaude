@@ -231,7 +231,7 @@ function Actions({ onPass, onHello, onConnect }: { onPass: () => void; onHello: 
       </Action>
       <Action label="Connecter" hint="Si le feeling est là" onPress={onConnect}>
         <View style={[styles.action, styles.actionGold]}>
-          <Image source={CONNECT_ICON} style={{ width: 50, height: 50 }} contentFit="contain" />
+          <Image source={CONNECT_ICON} style={{ width: 44, height: 44 }} contentFit="contain" />
         </View>
       </Action>
     </View>
@@ -516,9 +516,9 @@ const styles = StyleSheet.create({
   moreText: { color: colors.gold, fontSize: 13, fontWeight: '800' },
   actions: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-start', marginTop: 14 },
   actionWrap: { alignItems: 'center', width: 110 },
-  action: { width: 64, height: 64, margin: 1, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  coin: { width: 66, height: 66 },
-  coinGlow: { borderRadius: 33, shadowColor: colors.gold, shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } },
+  action: { width: 56, height: 56, margin: 1, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  coin: { width: 58, height: 58 },
+  coinGlow: { borderRadius: 29, shadowColor: colors.gold, shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } },
   actionGold: { backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 1.5, borderColor: colors.gold },
   actionLabel: { color: colors.text, fontSize: 12.5, fontWeight: '800', marginTop: 6 },
   actionHint: { color: colors.textFaint, fontSize: 10.5, marginTop: 1 },
