@@ -15,7 +15,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#050403",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -46,9 +46,11 @@
         }
       ]
     ],
-    "backgroundColor": "#0A0806",
+    "backgroundColor": "#050403",
     "splash": {
-      "backgroundColor": "#0A0806"
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050403"
     },
     "owner": "missdee",
     "runtimeVersion": {
