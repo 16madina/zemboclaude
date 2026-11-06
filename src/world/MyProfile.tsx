@@ -213,7 +213,7 @@ export function WorldMyProfile({ onEdit, onMessages, onQuit }: { onEdit: (step: 
           )}
 
           {/* ── Réglages ── */}
-          <Section title="Réglages World Room" />
+          <Section title="Réglages Zembo Meet" />
           <View style={styles.card}>
             <Text style={styles.settingLabel}>👋 Qui peut m'envoyer un Hello</Text>
             <Toggle options={RULES} value={rule} onChange={(v) => (setRule(v), w.showToast(`Hellos : ${v.toLowerCase()}`))} />
@@ -228,9 +228,9 @@ export function WorldMyProfile({ onEdit, onMessages, onQuit }: { onEdit: (step: 
             style={styles.quit}
           >
             <Ionicons name="log-out-outline" size={16} color="#F07167" />
-            <Text style={styles.quitText}>Quitter World Room</Text>
+            <Text style={styles.quitText}>Quitter Zembo Meet</Text>
           </Pressable>
-          <Text style={styles.footer}>Ton profil World Room est lié à ton compte Zembo.</Text>
+          <Text style={styles.footer}>Ton profil Zembo Meet est lié à ton compte Zembo.</Text>
         </View>
       </ScrollView>
       {/* bande sombre derrière l'heure quand on fait défiler */}

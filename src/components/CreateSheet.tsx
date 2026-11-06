@@ -16,7 +16,7 @@ const TOP: Option[] = [
 ];
 const BOTTOM: Option[] = [
   { id: 'motdor', title: 'Mot d’Or', desc: 'Trouve le mot caché en 6 essais, de 4 à 9 lettres. Le champion reste sur scène.', image: require('../../assets/create/motdor.jpg') },
-  { id: 'world', title: 'World Room', desc: 'Rencontre des gens du monde entier. Le monde est à un Hello.', image: require('../../assets/create/world.jpg') },
+  { id: 'world', title: 'Zembo Meet', desc: 'Rencontre des gens du monde entier. Le monde est à un Hello.', image: require('../../assets/create/world.jpg') },
 ];
 
 // Menu du bouton « + » : choisir le type de live à lancer

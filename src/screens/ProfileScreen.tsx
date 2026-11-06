@@ -223,7 +223,7 @@ function ProfileView({ onStartTable, name, handle }: { onStartTable: () => void;
           onPress={() => {
             setMenu(false);
             // suppression du compte depuis l'app : exigée par l'App Store
-            Alert.alert('Supprimer mon compte', 'Ton compte Zembo, ton profil World Room et tes données seront supprimés définitivement.', [
+            Alert.alert('Supprimer mon compte', 'Ton compte Zembo, ton profil Zembo Meet et tes données seront supprimés définitivement.', [
               { text: 'Annuler', style: 'cancel' },
               {
                 text: 'Supprimer',

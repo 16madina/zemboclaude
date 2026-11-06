@@ -1,4 +1,4 @@
-// World Room : données et règles reprises de zembolounge (src/lib/world-*.ts)
+// Zembo Meet : données et règles reprises de zembolounge (src/lib/world-*.ts)
 
 export const DECOR = require('../../assets/world/hello-decor.jpg');
 export const GLOBE = require('../../assets/world/globe.png');
@@ -123,7 +123,7 @@ export const thumbOf = (p: WorldPerson) => (typeof p.photo === 'string' ? p.phot
 /** Ces profils répondent Hello en retour (Hello mutuel). */
 export const MUTUAL_IDS = ['elena', 'moussa', 'awa'];
 
-/** Profil de découverte World Room (séparé du compte Zembo). */
+/** Profil de découverte Zembo Meet (séparé du compte Zembo). */
 export type WorldProfile = {
   username: string;
   completed: boolean;

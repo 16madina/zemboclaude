@@ -389,7 +389,7 @@ function Connected({ me, other, onThread, onDiscover }: { me: Persona; other: Pe
         </Pop>
       </View>
       <Text style={[styles.title, { color: colors.goldLight }]}>🎉 CONNEXION MUTUELLE</Text>
-      <Text style={styles.sub}>{other.name} est maintenant dans tes connexions World Room.</Text>
+      <Text style={styles.sub}>{other.name} est maintenant dans tes connexions Zembo Meet.</Text>
       <View style={{ alignSelf: 'stretch', marginTop: 30, gap: 10 }}>
         <GoldButton label="Ouvrir la conversation" onPress={onThread} big />
         <OutlineButton label="Continuer à découvrir" onPress={onDiscover} />

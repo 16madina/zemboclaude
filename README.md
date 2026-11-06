@@ -12,7 +12,7 @@ Application mobile native (Expo / React Native), version or de l'expérience « 
   - **Tournoi** : le dernier descend à chaque tour (4 → 3 → finale à 2), le gagnant prend une couronne et reste, 3 joueurs de la file montent. 5 manches.
   - **Groupe · Championnat** : 12, 16 ou 20 joueurs, tables de 4, points au classement général (4, 3, 2, 1), tables refaites d'après le classement à chaque ronde (système suisse), grande finale à 4. Environ 1 h. Les joueurs qui attendent voient leur table et le temps restant ; ils sont appelés (« Prépare-toi », « Je suis prêt ») avant de monter, sinon ils sont absents (0 point, la table joue à 3).
   Pour l'instant : toi contre des joueurs simulés.
-- **World Room** : profil en 7 étapes, découverte, Hello mutuel, rencontre vidéo de 60 secondes, connexions et messages.
+- **Zembo Meet** : profil en 7 étapes, découverte, Hello mutuel, rencontre vidéo de 60 secondes, connexions et messages.
 
 Les données sont encore des exemples (pas de base de données branchée). Play & Fun, Storytime et Stand-Up sont mis de côté pour plus tard.
 

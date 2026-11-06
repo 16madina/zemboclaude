@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { tap, useWorld } from './store';
 
-// Petits éléments visuels communs à World Room
+// Petits éléments visuels communs à Zembo Meet
 
 export function WorldTitle({ size = 26, tagline = true }: { size?: number; tagline?: boolean }) {
   return (
@@ -91,7 +91,7 @@ export function Chip({ label, on, onPress }: { label: string; on?: boolean; onPr
   );
 }
 
-/** Message éphémère en haut de World Room */
+/** Message éphémère en haut de Zembo Meet */
 export function WorldToast() {
   const { toast } = useWorld();
   const insets = useSafeAreaInsets();
@@ -176,7 +176,7 @@ const TABS: { key: WorldTab; emoji: string; label: string }[] = [
   { key: 'profile', emoji: '👤', label: 'Mon profil' },
 ];
 
-/** Barre du bas propre à World Room (remplace celle de Zembo) */
+/** Barre du bas propre à Zembo Meet (remplace celle de Zembo) */
 export function WorldDock({ value, onChange, badges }: { value: WorldTab; onChange: (t: WorldTab) => void; badges: Partial<Record<WorldTab, number>> }) {
   const insets = useSafeAreaInsets();
   return (

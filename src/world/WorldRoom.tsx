@@ -11,7 +11,7 @@ import { WorldHellos, WorldMessages, WorldThread } from './Tabs';
 import { WorldMyProfile } from './MyProfile';
 import { WorldDock, WorldToast, worldBg, type WorldTab } from './ui';
 
-// World Room : un espace à part dans Zembo, avec sa propre barre d'onglets
+// Zembo Meet : un espace à part dans Zembo, avec sa propre barre d'onglets
 export function WorldRoom({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { height } = useWindowDimensions();
   const y = useRef(new Animated.Value(height)).current;
@@ -109,7 +109,7 @@ function RoomReady({ onClose }: { onClose: () => void }) {
             onMessages={() => setTab('messages')}
             onQuit={() => {
               w.resetProfile();
-              w.showToast('Profil World Room désactivé');
+              w.showToast('Profil Zembo Meet désactivé');
               setScreen('intro');
             }}
           />
@@ -117,7 +117,7 @@ function RoomReady({ onClose }: { onClose: () => void }) {
       </View>
       <WorldDock value={tab} onChange={setTab} badges={{ hellos: w.pending.length, messages: unreadMsgs }} />
 
-      {/* sortir de World Room → retour à Zembo */}
+      {/* sortir de Zembo Meet → retour à Zembo */}
       {tab !== 'discover' && (
         <Pressable onPress={onClose} hitSlop={10} style={[styles.exit, { top: insets.top + 12 }]}>
           <Ionicons name="close" size={18} color={colors.text} />

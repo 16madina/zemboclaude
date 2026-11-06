@@ -15,7 +15,7 @@ import {
   type WorldProfile,
 } from './data';
 
-// État partagé de World Room. Le profil World est enregistré dans Firestore (worldProfiles/{uid}) ;
+// État partagé de Zembo Meet. Le profil World est enregistré dans Firestore (worldProfiles/{uid}) ;
 // les Hellos, connexions et messages sont encore des données de démonstration.
 
 type Ctx = {

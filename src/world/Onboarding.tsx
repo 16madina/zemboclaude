@@ -25,7 +25,7 @@ import { db } from '../lib/firebase';
 import { useSession } from '../lib/session';
 import { Chip, GoldButton, OutlineButton, WorldTitle, worldBg } from './ui';
 
-// Écran d'accueil World Room (avant la création du profil)
+// Écran d'accueil Zembo Meet (avant la création du profil)
 export function WorldIntro({ onBack, onStart }: { onBack: () => void; onStart: () => void }) {
   const insets = useSafeAreaInsets();
   const spin = useRef(new Animated.Value(0)).current;
@@ -92,7 +92,7 @@ export function WorldIntro({ onBack, onStart }: { onBack: () => void; onStart: (
   );
 }
 
-// Les 7 étapes de création du profil World Room
+// Les 7 étapes de création du profil Zembo Meet
 export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number; onExit: () => void; onDone: () => void }) {
   const { profile, setProfile, saveProfile, showToast } = useWorld();
   const { user: account, profile: zembo } = useSession();
@@ -133,7 +133,7 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
 
   if (step === 1)
     return (
-      <Step step={1} title="Choisis ton pseudo" subtitle="C'est ton identifiant public dans World Room." onBack={back} ctaDisabled={user !== 'ok' || remote !== 'free'} onCta={next}>
+      <Step step={1} title="Choisis ton pseudo" subtitle="C'est ton identifiant public dans Zembo Meet." onBack={back} ctaDisabled={user !== 'ok' || remote !== 'free'} onCta={next}>
         <Label text="Pseudo" required />
         <View style={styles.inputRow}>
           <Text style={styles.at}>@</Text>
@@ -158,7 +158,7 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
         {!!zemboPseudo && (
           <View style={styles.zemboRow}>
             {d.username === zemboPseudo ? (
-              <Text style={styles.zemboText}>C'est ton pseudo Zembo. Tu peux le garder ou en choisir un autre pour World Room.</Text>
+              <Text style={styles.zemboText}>C'est ton pseudo Zembo. Tu peux le garder ou en choisir un autre pour Zembo Meet.</Text>
             ) : (
               <Pressable onPress={() => set({ username: zemboPseudo })} hitSlop={6}>
                 <Text style={styles.zemboText}>
@@ -169,7 +169,7 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
           </View>
         )}
         <Text style={styles.note}>
-          ✨ Ton nom, ta date de naissance et ton email restent dans ton compte Zembo. World Room ne te demande que tes infos de découverte.
+          ✨ Ton nom, ta date de naissance et ton email restent dans ton compte Zembo. Zembo Meet ne te demande que tes infos de découverte.
         </Text>
       </Step>
     );
@@ -322,7 +322,7 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
 
   if (step === 6)
     return (
-      <Step step={6} title="Tes intentions" subtitle="Qu'est-ce que tu recherches sur World Room ?" onBack={back} ctaDisabled={d.intentions.length === 0} onCta={next}>
+      <Step step={6} title="Tes intentions" subtitle="Qu'est-ce que tu recherches sur Zembo Meet ?" onBack={back} ctaDisabled={d.intentions.length === 0} onCta={next}>
         <View style={{ gap: 10 }}>
           {INTENTIONS.map((it) => {
             const on = d.intentions.includes(it.key);
@@ -354,13 +354,13 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
       title="Ton profil est prêt !"
       subtitle="Voici un aperçu de ce que les autres verront."
       onBack={back}
-      cta={saving ? 'Enregistrement…' : 'Entrer dans World Room'}
+      cta={saving ? 'Enregistrement…' : 'Entrer dans Zembo Meet'}
       ctaDisabled={saving}
       onCta={async () => {
         setSaving(true);
         try {
           await saveProfile({ ...d, completed: true });
-          showToast('Profil World Room enregistré');
+          showToast('Profil Zembo Meet enregistré');
           onDone();
         } catch (e) {
           const taken = (e as Error)?.message === 'pseudo-world-pris';
@@ -408,7 +408,7 @@ export function WorldOnboarding({ start = 1, onExit, onDone }: { start?: number;
           </View>
         )}
       </View>
-      <Text style={styles.note}>Ton profil World Room est séparé de ton compte Zembo. Tu pourras le modifier à tout moment.</Text>
+      <Text style={styles.note}>Ton profil Zembo Meet est séparé de ton compte Zembo. Tu pourras le modifier à tout moment.</Text>
     </Step>
   );
 }

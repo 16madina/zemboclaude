@@ -31,14 +31,14 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // Profil World Room : visible par les membres connectés une fois terminé
+    // Profil Zembo Meet : visible par les membres connectés une fois terminé
     match /worldProfiles/{uid} {
       allow read: if isMe(uid) || (signedIn() && resource.data.completed == true);
       allow create, update: if isMe(uid);
       allow delete: if isMe(uid);
     }
 
-    // Réservation des pseudos World Room
+    // Réservation des pseudos Zembo Meet
     match /worldUsernames/{name} {
       allow get: if signedIn();
       allow list: if false;
