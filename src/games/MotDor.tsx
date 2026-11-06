@@ -211,6 +211,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const [queue, setQueue] = useState<QItem[]>(() => QUEUE0.map((n) => ({ p: viewer(n, qSeq.current++), status: 'waiting' as const })));
   const [requestsOpen, setRequestsOpen] = useState(true);
   const [drawer, setDrawer] = useState(false);
+  const [joined, setJoined] = useState<number | null>(null); // fenêtre « tu es à la Xe place »
   const [menuOpen, setMenuOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [giftOpen, setGiftOpen] = useState(false);
@@ -231,7 +232,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const liveRoom = mediaAvailable && phase !== 'lobby' && auth.currentUser ? `motdor-${auth.currentUser.uid}` : null;
   const media = useLiveMedia(liveRoom, {
     publish: camReady && meOnStage,
-    mic: myMic && (phase !== 'turn' || activeId === 'me'),
+    mic: myMic && phase === 'turn' && activeId === 'me', // fermé pour tous les autres, impossible à rallumer
     name: profile?.pseudo,
   });
 
@@ -591,7 +592,8 @@ function Game({ onClose }: { onClose: () => void }) {
     if (meOnStage) return toast.show('Tu es déjà sur scène 🎤');
     if (meQueued) return;
     setQueue((q) => [...q, { p: ME, status: 'waiting' }]);
-    toast.show(`Tu es dans la liste — position ${queue.length + 1}`);
+    setDrawer(false);
+    setJoined(queue.length + 1);
   };
 
   const newGame = () => {
@@ -612,16 +614,6 @@ function Game({ onClose }: { onClose: () => void }) {
   const given = givenCount(len);
   // les indices n'apparaissent qu'une fois les cases retournées
   const known = useMemo(() => (secretNow ? knownLetters(secretNow, revealRow == null ? rows : rows.slice(0, revealRow)) : []), [secretNow, rows, revealRow]);
-  const keyMarks = useMemo(() => {
-    const m: Record<string, Mark> = {};
-    const rank = { ok: 3, near: 2, no: 1 };
-    for (const r of rows)
-      r.marks.forEach((x, i) => {
-        const c = r.guess[i];
-        if (!m[c] || rank[x] > rank[m[c]]) m[c] = x;
-      });
-    return m;
-  }, [rows]);
   const press = (k: string) => {
     if (!myTurn || busyRef.current) return;
     if (k === '⌫') {
@@ -723,7 +715,7 @@ function Game({ onClose }: { onClose: () => void }) {
         </View>
         <Pressable onPress={() => setDrawer(true)} hitSlop={6} style={styles.queueBtn}>
           <Ionicons name="people" size={15} color={GOLD} />
-          <Text style={styles.queueBtnText}>{queue.filter((x) => x.status !== 'declined').length}</Text>
+          <Text style={styles.queueBtnText}>Jouer</Text>
         </Pressable>
         <Pressable onPress={() => setMenuOpen(true)} hitSlop={8} style={[styles.roundBtn, { marginLeft: 8 }]}>
           <Ionicons name="ellipsis-horizontal" size={17} color="#fff" />
@@ -816,7 +808,7 @@ function Game({ onClose }: { onClose: () => void }) {
           const isOut = out.includes(p.id);
           const tries = triesOf(p);
           const crown = streaks[p.id] ?? 0;
-          const micOn = phase !== 'turn' || isActive;
+          const micOn = phase === 'turn' && p.id === activeId && (!p.me || myMic);
           return (
             <View key={p.id} style={{ width: camW }}>
               <View style={[styles.cam, p.me && styles.camMe, isOut && { opacity: 0.45 }]}>
@@ -832,7 +824,7 @@ function Game({ onClose }: { onClose: () => void }) {
                 <View style={[styles.mic, !micOn && { backgroundColor: 'rgba(229,72,77,0.85)' }]}>
                   <Ionicons name={micOn ? 'mic' : 'mic-off'} size={11} color="#fff" />
                 </View>
-                {p.me && media.status === 'on' && (
+                {p.me && media.status === 'on' && myTurn && (
                   <Pressable onPress={() => setMyMic((m) => !m)} hitSlop={6} style={[styles.myMicBtn, !myMic && { backgroundColor: RED }]}>
                     <Ionicons name={myMic ? 'mic' : 'mic-off'} size={12} color="#fff" />
                   </Pressable>
@@ -871,7 +863,7 @@ function Game({ onClose }: { onClose: () => void }) {
               <View key={r} style={styles.kbRow}>
                 {r === 2 && <Key label="⌫" wide onPress={() => press('⌫')} />}
                 {row.split('').map((k) => (
-                  <Key key={k} label={k} mark={keyMarks[k]} onPress={() => press(k)} />
+                  <Key key={k} label={k} onPress={() => press(k)} />
                 ))}
                 {r === 2 && <Key label="Valider" ok onPress={() => press('OK')} />}
               </View>
@@ -1074,6 +1066,26 @@ function Game({ onClose }: { onClose: () => void }) {
           }}
         />
       </Sheet>
+      {joined != null && (
+        <View style={[StyleSheet.absoluteFill, styles.popWrap]}>
+          <FadeIn style={styles.pop}>
+            <Text style={{ fontSize: 36, textAlign: 'center' }}>🙋</Text>
+            <Text style={styles.cardTitle}>Demande envoyée !</Text>
+            <Text style={styles.popPlace}>
+              Tu es à la <Text style={{ color: GOLD }}>{joined === 1 ? '1re' : `${joined}e`}</Text> place
+            </Text>
+            <View style={styles.popRule}>
+              <Ionicons name="videocam" size={18} color={GOLD} />
+              <Text style={styles.popRuleText}>Pour monter sur scène, la caméra est obligatoire. Tu seras invité quand ce sera ton tour.</Text>
+            </View>
+            <Pressable onPress={() => setJoined(null)}>
+              <LinearGradient colors={goldGradient} style={styles.cta}>
+                <Text style={styles.ctaText}>J’ai compris</Text>
+              </LinearGradient>
+            </Pressable>
+          </FadeIn>
+        </View>
+      )}
       <Toast text={toast.text} top={T + 110} />
     </View>
   );
@@ -1923,6 +1935,11 @@ const styles = StyleSheet.create({
   qAction: { padding: 2 },
   drawerMe: { color: GOLD, fontSize: 14, fontWeight: '900', textAlign: 'center', paddingVertical: 10 },
 
+  popWrap: { backgroundColor: 'rgba(5,4,20,0.7)', zIndex: 60, justifyContent: 'center', paddingHorizontal: 24 },
+  pop: { borderRadius: 22, borderWidth: 2, borderColor: GOLD2, backgroundColor: 'rgba(14,16,52,0.98)', padding: 18, ...glow },
+  popPlace: { color: '#fff', fontSize: 18, fontWeight: '900', textAlign: 'center', marginTop: 6 },
+  popRule: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 14, padding: 12, borderRadius: 14, backgroundColor: 'rgba(233,185,73,0.12)', borderWidth: 1, borderColor: 'rgba(233,185,73,0.5)' },
+  popRuleText: { flex: 1, color: '#fff', fontSize: 13, lineHeight: 18, fontWeight: '700' },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
   menuText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   rules: { color: '#fff', fontSize: 13.5, lineHeight: 22 },
