@@ -12,7 +12,7 @@ export function WorldTitle({ size = 26, tagline = true }: { size?: number; tagli
   return (
     <View style={{ alignItems: 'center' }}>
       <Text style={[styles.title, { fontSize: size, letterSpacing: size * 0.16 }]}>
-        W<Text style={{ fontSize: size * 0.82 }}>🌍</Text>RLD ROOM
+        ZEMB<Text style={{ fontSize: size * 0.82 }}>🌍</Text> <Text style={{ color: colors.gold }}>MEET</Text>
       </Text>
       {tagline && (
         <Text style={styles.tagline}>

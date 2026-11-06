@@ -214,6 +214,8 @@ const Card = memo(function Card({
   );
 });
 
+const CONNECT_ICON = require('../../assets/world/connect.png');
+
 function Actions({ onPass, onHello, onConnect }: { onPass: () => void; onHello: () => void; onConnect: () => void }) {
   return (
     <View style={styles.actions}>
@@ -229,8 +231,7 @@ function Actions({ onPass, onHello, onConnect }: { onPass: () => void; onHello: 
       </Action>
       <Action label="Connecter" hint="Si le feeling est là" onPress={onConnect}>
         <View style={[styles.action, styles.actionGold]}>
-          <Text style={styles.zLetter}>Z</Text>
-          <Ionicons name="heart" size={12} color={colors.gold} style={{ position: 'absolute', right: 13, top: 13 }} />
+          <Image source={CONNECT_ICON} style={{ width: 46, height: 46 }} contentFit="contain" />
         </View>
       </Action>
     </View>
@@ -519,7 +520,6 @@ const styles = StyleSheet.create({
   actionBig: { width: 70, height: 70, borderRadius: 35, shadowColor: colors.gold, shadowOpacity: 0.6, shadowRadius: 16, shadowOffset: { width: 0, height: 0 } },
   actionDim: { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   actionGold: { backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 1.5, borderColor: colors.gold },
-  zLetter: { color: colors.gold, fontSize: 24, fontWeight: '900' },
   actionLabel: { color: colors.text, fontSize: 12.5, fontWeight: '800', marginTop: 6 },
   actionHint: { color: colors.textFaint, fontSize: 10.5, marginTop: 1 },
   panel: {

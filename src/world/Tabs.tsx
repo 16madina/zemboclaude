@@ -164,7 +164,7 @@ export function WorldMessages({ onThread, onHellos }: { onThread: (id: string) =
   const w = useWorld();
   return (
     <View style={styles.root}>
-      <Head title="Messages World" sub="🌍 Tes connexions World : messagerie distincte de Zembo." />
+      <Head title="Messages Zembo Meet" sub="🌍 Tes connexions Zembo Meet : messagerie distincte de Zembo." />
       <ScrollView contentContainerStyle={{ paddingVertical: 8 }}>
         {w.connections.length === 0 && (
           <Text style={[styles.empty, { margin: 16 }]}>
