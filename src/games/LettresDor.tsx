@@ -184,6 +184,8 @@ const worldPlayer = (id: string, level: BotLevel): Player => {
   const p = findPerson(id);
   return { id, name: p?.name ?? id, photo: p?.photo ?? '', level, score: 0, last: 0 };
 };
+// quand l'hôte présente sans jouer, cette joueuse prend sa place sur scène
+const HOST_SEAT: Player = { id: 'v-sarah', name: 'Sarah', photo: faceOf('Sarah', 300), level: LEVELS[3], score: 0, last: 0 };
 const ME: Player = { id: 'me', name: 'Toi', photo: DEENA_PHOTO, me: true, level: LEVELS[0], score: 0, last: 0 };
 
 const CHAT0: [string, string][] = [
@@ -294,6 +296,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const training = format === 'training';
   const [level, setLevel] = useState<Level>('difficile');
   const [trainBots, setTrainBots] = useState<Player[]>(() => pickBots('difficile'));
+  const [hostPlays, setHostPlays] = useState(true); // l'hôte prend une des 4 places, ou présente sans jouer
   const [focus, setFocus] = useState<Player | null>(null);
   const rondes = RONDES[lgSize] ?? 4;
   const general = sortStandings(standings);
@@ -312,7 +315,6 @@ function Game({ onClose }: { onClose: () => void }) {
   // les micros se coupent pendant le chrono pour ne pas gâcher les réponses cachées ──
   // tu vérifies ta caméra avant le direct ; ensuite tu peux couper ton micro et retourner la caméra
   const [camReady, setCamReady] = useState(false);
-  const [afterCam, setAfterCam] = useState<Phase>('intro');
   const [myMic, setMyMic] = useState(true);
   const liveRoom = mediaAvailable && !training && !['mode', 'level'].includes(phase) && auth.currentUser ? `lettres-${auth.currentUser.uid}` : null;
   const media = useLiveMedia(liveRoom, {
@@ -390,7 +392,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const pickSize = (n: number) => {
     tap();
     setLgSize(n);
-    setSignups([ME, worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2])]);
+    setSignups([...(hostPlays ? [ME] : [newViewer()]), worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2])]);
     setPhase('signup');
   };
 
@@ -1481,52 +1483,53 @@ function Game({ onClose }: { onClose: () => void }) {
       {floaters.layer}
 
       {/* ── écrans par-dessus : mode, élimination, fin de manche, fin du tournoi ── */}
-      {phase === 'mode' && (
-        <ModePicker
-          top={T + 120}
-          onTournament={() => {
-            setFormat('tournoi');
-            setPhase('level');
-          }}
-          onGroup={() => {
+      {(phase === 'mode' || phase === 'level') && (
+        <StartForm
+          top={T + 56}
+          format={format}
+          setFormat={(f) => {
             tap();
-            setFormat('groupe');
-            setPhase('level');
+            setFormat(f);
           }}
-          onTraining={() => {
-            tap();
-            setFormat('training');
-            setPhase('level');
-          }}
-          onClose={onClose}
-        />
-      )}
-      {phase === 'level' && (
-        <LevelPicker
-          top={T + 90}
-          training={training}
           level={level}
-          bots={trainBots}
-          onLevel={(l) => {
+          setLevel={(l) => {
             tap();
             setLevel(l);
             setTrainBots(pickBots(l));
           }}
-          onGo={() => {
-            if (training) {
+          hostPlays={hostPlays}
+          setHostPlays={setHostPlays}
+          players={
+            format === 'training'
+              ? [ME, ...trainBots]
+              : hostPlays
+                ? [ME, worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2])]
+                : [
+                    worldPlayer('moussa', LEVELS[0]),
+                    worldPlayer('awa', LEVELS[1]),
+                    worldPlayer('kenji', LEVELS[2]),
+                    HOST_SEAT,
+                  ]
+          }
+          onStart={() => {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+            setStageIdx(0);
+            setEpreuve(0);
+            if (format === 'training') {
               setStage([fresh(ME), ...trainBots.map(fresh)]);
-              setStageIdx(0);
-              setEpreuve(0);
               setPhase('intro');
-            } else if (group) {
-              setAfterCam('size');
-              setPhase(camReady ? 'size' : 'camcheck');
-            } else {
-              setAfterCam('intro');
-              setPhase(camReady ? 'intro' : 'camcheck');
+              return;
             }
+            setCamReady(hostPlays);
+            if (format === 'groupe') return setPhase('size');
+            setStage(
+              hostPlays
+                ? [fresh(ME), worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2])]
+                : [worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2]), fresh(HOST_SEAT)],
+            );
+            setPhase('intro');
           }}
-          onBack={() => setPhase('mode')}
+          onClose={onClose}
         />
       )}
       {phase === 'trainEnd' && overlay && (
@@ -1544,20 +1547,9 @@ function Game({ onClose }: { onClose: () => void }) {
           }}
           onLevel={() => {
             setOverlay(null);
-            setPhase('level');
+            setPhase('mode');
           }}
           onClose={onClose}
-        />
-      )}
-      {phase === 'camcheck' && (
-        <CamCheck
-          top={T + 90}
-          onReady={() => {
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-            setCamReady(true);
-            setPhase(afterCam);
-          }}
-          onBack={() => setPhase('level')}
         />
       )}
       {phase === 'size' && <SizePicker top={T + 100} onPick={pickSize} onBack={() => setPhase('mode')} />}
@@ -1816,121 +1808,120 @@ function Cover({ top, children }: { top: number; children: React.ReactNode }) {
   );
 }
 
-// Au lancement : choisir le mode de jeu
-function ModePicker({
+// ── Au lancement : mode, niveau, ton rôle, ta caméra (même format que Mot d'Or) ──
+function StartForm({
   top,
-  onTournament,
-  onGroup,
-  onTraining,
+  format,
+  setFormat,
+  level,
+  setLevel,
+  hostPlays,
+  setHostPlays,
+  players,
+  onStart,
   onClose,
 }: {
   top: number;
-  onTournament: () => void;
-  onGroup: () => void;
-  onTraining: () => void;
+  format: Format;
+  setFormat: (f: Format) => void;
+  level: Level;
+  setLevel: (l: Level) => void;
+  hostPlays: boolean;
+  setHostPlays: (b: boolean) => void;
+  players: Player[];
+  onStart: () => void;
   onClose: () => void;
 }) {
+  const training = format === 'training';
+  const withCam = !training && hostPlays;
   return (
     <Cover top={top}>
-      <Text style={styles.finalTitle}>Lance ton live</Text>
-      <Text style={styles.finalSub}>Quel mode de jeu veux-tu ?</Text>
-      <Pressable onPress={onTournament}>
-        <View style={[styles.modeRow, styles.modeRowOn]}>
-          <Text style={{ fontSize: 30 }}>🏆</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.modeTitle}>Tournoi</Text>
-            <Text style={styles.modeDesc}>4 joueurs. Le dernier descend à chaque tour, jusqu’au gagnant. 5 manches.</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={GOLD} />
-        </View>
-      </Pressable>
-      <Pressable onPress={onGroup}>
-        <View style={[styles.modeRow, styles.modeRowOn]}>
-          <Text style={{ fontSize: 30 }}>👥</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.modeTitle}>Groupe · Championnat</Text>
-            <Text style={styles.modeDesc}>12 à 20 joueurs. Tables de 4, classement général, grande finale. Environ 1 h.</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={GOLD} />
-        </View>
-      </Pressable>
-      <Pressable onPress={onTraining}>
-        <View style={[styles.modeRow, styles.modeRowTrain]}>
-          <Text style={{ fontSize: 30 }}>🎯</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.modeTitle}>Entraînement</Text>
-            <Text style={styles.modeDesc}>Toi contre l’ordinateur, sans live. 6 épreuves pour t’entraîner.</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={GOLD} />
-        </View>
-      </Pressable>
-      <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 8, padding: 6 }}>
-        <Text style={styles.quitText}>Annuler</Text>
-      </Pressable>
-    </Cover>
-  );
-}
+      <Text style={styles.finalTitle}>Lettres d’Or</Text>
+      <Text style={styles.finalSub}>Le mot le plus long et le compte est bon, en direct.</Text>
 
-// ── Choix du niveau (et des adversaires en entraînement) ──
-function LevelPicker({
-  top,
-  training,
-  level,
-  bots,
-  onLevel,
-  onGo,
-  onBack,
-}: {
-  top: number;
-  training: boolean;
-  level: Level;
-  bots: Player[];
-  onLevel: (l: Level) => void;
-  onGo: () => void;
-  onBack: () => void;
-}) {
-  return (
-    <Cover top={top}>
-      <Text style={styles.finalTitle}>{training ? 'Entraînement' : 'Niveau du live'}</Text>
-      <Text style={styles.finalSub}>Choisis ton niveau</Text>
-      {(['facile', 'difficile', 'expert'] as Level[]).map((l) => (
-        <Pressable key={l} onPress={() => onLevel(l)}>
-          <View style={[styles.modeRow, level === l && styles.modeRowOn]}>
-            <Text style={{ fontSize: 26 }}>{LEVEL_INFO[l].emoji}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modeTitle}>{LEVEL_LABEL[l]}</Text>
-              <Text style={styles.modeDesc}>
-                Chrono : {DURS[l].L} s pour les lettres, {DURS[l].C} s pour les chiffres.
-                {training ? ` Adversaires : ${BOTS[l].map((b) => b.name).join(', ')}.` : ''}
-              </Text>
-            </View>
-            {level === l && <Ionicons name="checkmark-circle" size={22} color={GOLD} />}
-          </View>
-        </Pressable>
-      ))}
-      {training && (
+      <Text style={styles.formLabel}>Mode</Text>
+      <View style={styles.fChoice}>
+        {[
+          { v: 'tournoi' as Format, t: '🏆 Tournoi', d: '4 joueurs, le dernier descend' },
+          { v: 'groupe' as Format, t: '👥 Groupe', d: 'Championnat de 12 à 20' },
+          { v: 'training' as Format, t: '🎯 Entraînement', d: 'Contre l’ordinateur' },
+        ].map((o) => (
+          <Pressable key={o.v} onPress={() => setFormat(o.v)} style={[styles.fCard, format === o.v && styles.fOn]}>
+            <Text style={[styles.fText, format === o.v && { color: INK }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+              {o.t}
+            </Text>
+            <Text style={[styles.fDesc, format === o.v && { color: INK }]}>{o.d}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <Text style={styles.formLabel}>Niveau</Text>
+      <View style={styles.fChoice}>
+        {(['facile', 'difficile', 'expert'] as Level[]).map((l) => (
+          <Pressable key={l} onPress={() => setLevel(l)} style={[styles.fBtn, level === l && styles.fOn]}>
+            <Text style={[styles.fText, level === l && { color: INK }]}>
+              {LEVEL_INFO[l].emoji} {LEVEL_LABEL[l]}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={styles.formHint}>
+        Chrono : {DURS[level].L} s pour les lettres, {DURS[level].C} s pour les chiffres.
+      </Text>
+
+      {!training && (
         <>
-          <Text style={styles.sectionTitle}>Tes adversaires</Text>
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 4 }}>
-            {bots.map((p) => (
-              <View key={p.id} style={{ alignItems: 'center', flex: 1 }}>
-                <Image source={p.photo} style={styles.upAv} />
+          <Text style={styles.formLabel}>Ton rôle</Text>
+          <View style={styles.fChoice}>
+            {[
+              { v: true, t: 'Je joue', d: 'Tu prends une des 4 places sur scène' },
+              { v: false, t: 'Je présente sans jouer', d: 'Tu animes et gères la liste d’attente' },
+            ].map((o) => (
+              <Pressable key={String(o.v)} onPress={() => setHostPlays(o.v)} style={[styles.fCard, hostPlays === o.v && styles.fOn]}>
+                <Text style={[styles.fText, hostPlays === o.v && { color: INK }]}>{o.t}</Text>
+                <Text style={[styles.fDesc, hostPlays === o.v && { color: INK }]}>{o.d}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      )}
+
+      {withCam && (
+        <View style={styles.fCam}>
+          <Image source={DEENA_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
+          <CameraPreview active style={StyleSheet.absoluteFill} />
+          <Text style={styles.fCamText}>{mediaAvailable ? '📷 Ta caméra' : 'Aperçu dans l’app installée'}</Text>
+        </View>
+      )}
+
+      {format === 'groupe' ? (
+        <Text style={styles.formHint}>Tu choisis ensuite le nombre de joueurs (12, 16 ou 20).</Text>
+      ) : (
+        <>
+          <Text style={styles.formLabel}>{training ? 'Tes adversaires' : 'Montent sur scène'}</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {players.map((p, i) => (
+              <View key={p.id} style={{ flex: 1, alignItems: 'center' }}>
+                <Image source={p.photo} style={[styles.fAv, p.me && { borderColor: GOLD }]} />
                 <Text style={styles.upName} numberOfLines={1}>
-                  {p.name}
+                  {training ? nameOf(p) : `${i + 1}. ${nameOf(p)}`}
                 </Text>
               </View>
             ))}
           </View>
         </>
       )}
-      <Pressable onPress={onGo}>
+
+      <Pressable onPress={onStart}>
         <LinearGradient colors={goldGradient} style={styles.replay}>
-          <Ionicons name="play" size={18} color={INK} />
-          <Text style={styles.replayText}>{training ? 'Commencer l’entraînement' : 'Continuer'}</Text>
+          <Ionicons name={withCam ? 'videocam' : 'play'} size={18} color={INK} />
+          <Text style={styles.replayText}>
+            {training ? 'Commencer l’entraînement' : format === 'groupe' ? 'Continuer' : withCam ? 'Je suis prêt, on commence !' : 'Lancer la partie'}
+          </Text>
         </LinearGradient>
       </Pressable>
-      <Pressable onPress={onBack} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
-        <Text style={styles.quitText}>Retour</Text>
+      <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
+        <Text style={styles.quitText}>Annuler</Text>
       </Pressable>
     </Cover>
   );
@@ -2004,39 +1995,6 @@ function LeagueInfo({ status, next, note, onPress }: { status: string | null; ne
         </View>
       )}
     </Pressable>
-  );
-}
-
-// ── Avant le direct : tu vérifies ta caméra ──
-function CamCheck({ top, onReady, onBack }: { top: number; onReady: () => void; onBack: () => void }) {
-  return (
-    <Cover top={top}>
-      <Text style={styles.finalTitle}>Vérifie ta caméra</Text>
-      <Text style={styles.finalSub}>Sur scène, ta caméra et ton micro sont en direct.</Text>
-      <View style={styles.checkCam}>
-        <Image source={DEENA_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
-        <CameraPreview active style={StyleSheet.absoluteFill} />
-        {!mediaAvailable && (
-          <View style={styles.checkNote}>
-            <Text style={styles.checkNoteText}>Aperçu dans l’app installée</Text>
-          </View>
-        )}
-      </View>
-      <Text style={styles.rulesText}>
-        {
-          '• Mets-toi face à la lumière, le visage bien visible.\n• Tu peux couper ton micro ou retourner la caméra depuis ta case.\n• Pendant le chrono, les micros se coupent tout seuls.'
-        }
-      </Text>
-      <Pressable onPress={onReady}>
-        <LinearGradient colors={goldGradient} style={styles.replay}>
-          <Ionicons name="videocam" size={18} color={INK} />
-          <Text style={styles.replayText}>Je suis prêt, j’allume ma caméra</Text>
-        </LinearGradient>
-      </Pressable>
-      <Pressable onPress={onBack} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
-        <Text style={styles.quitText}>Retour</Text>
-      </Pressable>
-    </Cover>
   );
 }
 
@@ -2911,6 +2869,48 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.05)',
     marginBottom: 10,
   },
+  formLabel: { color: GOLD, fontSize: 13, fontWeight: '900', letterSpacing: 0.5, marginBottom: 6 },
+  formHint: { color: 'rgba(255,255,255,0.7)', fontSize: 12, textAlign: 'center', marginTop: -6, marginBottom: 12 },
+  fChoice: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  fCard: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: GOLD2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 8,
+  },
+  fBtn: { flex: 1, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: GOLD2, alignItems: 'center', justifyContent: 'center' },
+  fOn: { backgroundColor: GOLD },
+  fText: { color: GOLD, fontSize: 13.5, fontWeight: '900' },
+  fDesc: { color: 'rgba(255,255,255,0.7)', fontSize: 10.5, fontWeight: '700', textAlign: 'center', marginTop: 2 },
+  fCam: {
+    alignSelf: 'center',
+    width: 92,
+    height: 120,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: GOLD2,
+    marginBottom: 10,
+    backgroundColor: '#15114A',
+  },
+  fCamText: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingVertical: 4,
+    textAlign: 'center',
+    color: '#fff',
+    fontSize: 9.5,
+    fontWeight: '800',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  fAv: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: PURPLE },
   modeRowTrain: { borderColor: '#3DDC97', backgroundColor: 'rgba(61,220,151,0.1)' },
   trainBadge: {
     backgroundColor: 'rgba(61,220,151,0.18)',
