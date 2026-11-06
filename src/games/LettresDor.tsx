@@ -1465,7 +1465,7 @@ function Game({ onClose }: { onClose: () => void }) {
 }
 
 // ── Fond de scène : dégradé violet, projecteurs, halo doré ──
-const Backdrop = memo(function Backdrop() {
+export const Backdrop = memo(function Backdrop() {
   const { width: W, height: H } = useWindowDimensions();
   const beams = useMemo(
     () =>
@@ -1958,7 +1958,7 @@ function SubmitBtn({ done, onPress, small }: { done: boolean; onPress: () => voi
   );
 }
 
-function RoundGold({ children, onPress }: { children: React.ReactNode; onPress: () => void }) {
+export function RoundGold({ children, onPress }: { children: React.ReactNode; onPress: () => void }) {
   return (
     <Pressable onPress={onPress}>
       <LinearGradient colors={['#FFE89A', '#D9A43A', '#8E5C0E']} style={styles.roundGold}>

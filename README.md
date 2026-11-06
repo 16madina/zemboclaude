@@ -29,6 +29,8 @@ Puis scanner le QR code avec l'app Expo Go sur l'iPhone.
 
 La liste de mots de Lettres d'Or (`src/games/words.ts`) vient de [Lexique 3.83](http://www.lexique.org) (New, Pallier et al.), sous licence [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
+- **Mot d'Or** : trouver le mot caché en 6 essais (vert = bien placée, jaune = mal placée, gris = absente). 4 joueurs jouent chacun leur tour, chacun son mot, de 4 à 9 lettres. Ceux qui trouvent passent au niveau suivant, les autres descendent ; le champion reste sur scène et 3 joueurs de la liste d'attente montent (sur invitation de l'hôte). Sons originaux dans `assets/sounds/motdor/`. Pour l'instant : joueurs simulés.
+
 ## Caméras et micros (LiveKit)
 
 Les lives utilisent [LiveKit](https://livekit.io) (projet « Zembo Natif ») pour la vidéo en direct.

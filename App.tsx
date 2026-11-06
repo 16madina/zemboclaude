@@ -21,6 +21,7 @@ import { SlamTherapie } from './src/talk/SlamTherapie';
 import { MicroOuvert } from './src/talk/MicroOuvert';
 import type { TalkFormat } from './src/talk/TalkShowPicker';
 import { LettresDor } from './src/games/LettresDor';
+import { MotDor } from './src/games/MotDor';
 
 export default function App() {
   return (
@@ -46,6 +47,7 @@ function Main() {
   const [talkOpen, setTalkOpen] = useState(false);
   const [talk, setTalk] = useState<TalkFormat | null>(null);
   const [gameOpen, setGameOpen] = useState(false);
+  const [motOpen, setMotOpen] = useState(false);
   // un onglet visité reste monté pour garder sa position et son état
   const [visited, setVisited] = useState<Record<string, boolean>>({ home: true });
   const onUnread = useCallback((n: number) => setInboxBadge(n), []);
@@ -64,7 +66,7 @@ function Main() {
       <View style={styles.root}>
         <View style={styles.content}>
           {/* L'accueil reste monté pour garder la position dans le fil */}
-          <HomeScreen focused={tab === 'home' && !createOpen && !setupOpen && !table && !worldOpen && !talkOpen && !talk && !gameOpen} />
+          <HomeScreen focused={tab === 'home' && !createOpen && !setupOpen && !table && !worldOpen && !talkOpen && !talk && !gameOpen && !motOpen} />
           {visited.discover && (
             <View style={page('discover')}>
               <DiscoverScreen />
@@ -90,6 +92,7 @@ function Main() {
           if (kind === 'world') setTimeout(() => setWorldOpen(true), 250);
           else if (kind === 'talk') setTimeout(() => setTalkOpen(true), 350);
           else if (kind === 'game') setTimeout(() => setGameOpen(true), 350);
+          else if (kind === 'motdor') setTimeout(() => setMotOpen(true), 350);
           else setTimeout(() => setSetupOpen(true), 350);
         }}
       />
@@ -114,6 +117,7 @@ function Main() {
       <SlamTherapie open={talk === 'slam'} onClose={() => setTalk(null)} />
       <MicroOuvert open={talk === 'open-mic'} onClose={() => setTalk(null)} />
       <LettresDor open={gameOpen} onClose={() => setGameOpen(false)} />
+      <MotDor open={motOpen} onClose={() => setMotOpen(false)} />
     </>
   );
 }
