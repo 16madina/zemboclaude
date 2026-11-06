@@ -653,7 +653,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const tileW = Math.min(78, Math.floor((gridW - (len - 1) * 5) / len));
   const tileH = Math.min(36, Math.max(30, tileW));
   const camW = (width - 24 - 3 * 8) / 4;
-  const chatRows = Math.max(2, Math.floor((chatH - 6) / 27));
+  const chatRows = Math.max(myTurn ? 0 : 2, Math.floor((chatH - 6) / 27)); // pendant ton tour, pas de ligne coupée sous le clavier
   const timeTotal = TURN_TIME[len];
   const clock = phase === 'turn' ? timeLeft : phase === 'intro' ? timeTotal : phase === 'turnEnd' ? timeLeft : timeTotal;
   const champStreak = champion ? (streaks[champion] ?? 1) : 0;
@@ -861,10 +861,10 @@ function Game({ onClose }: { onClose: () => void }) {
             </Text>
             {KEYS.map((row, r) => (
               <View key={r} style={styles.kbRow}>
-                {r === 2 && <Key label="⌫" wide onPress={() => press('⌫')} />}
                 {row.split('').map((k) => (
                   <Key key={k} label={k} onPress={() => press(k)} />
                 ))}
+                {r === 2 && <Key label="⌫" wide onPress={() => press('⌫')} />}
                 {r === 2 && <Key label="Valider" ok onPress={() => press('OK')} />}
               </View>
             ))}
@@ -1187,15 +1187,23 @@ function Legend({ color, text }: { color: string; text: string }) {
 
 function Key({ label, mark, wide, ok, onPress }: { label: string; mark?: Mark; wide?: boolean; ok?: boolean; onPress: () => void }) {
   const bg = ok ? undefined : mark === 'ok' ? GREEN : mark === 'near' ? YELLOW : mark === 'no' ? '#2A2836' : 'rgba(255,255,255,0.12)';
-  const inner = (
-    <Text
-      style={[styles.keyText, ok && { color: INK, fontSize: 14 }, mark === 'near' && { color: '#2A1A00' }, mark === 'no' && { color: 'rgba(255,255,255,0.4)' }]}
-    >
-      {label}
-    </Text>
-  );
+  const inner =
+    label === '⌫' ? (
+      <Ionicons name="backspace-outline" size={26} color="#fff" />
+    ) : (
+      <Text
+        style={[
+          styles.keyText,
+          ok && { color: INK, fontSize: 16 },
+          mark === 'near' && { color: '#2A1A00' },
+          mark === 'no' && { color: 'rgba(255,255,255,0.4)' },
+        ]}
+      >
+        {label}
+      </Text>
+    );
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [{ flex: wide ? 1.5 : ok ? 2.4 : 1 }, pressed && { opacity: 0.6 }]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [{ flex: wide ? 1.7 : ok ? 2.3 : 1 }, pressed && { opacity: 0.6, transform: [{ scale: 0.94 }] }]}>
       {ok ? (
         <LinearGradient colors={goldGradient} style={styles.key}>
           {inner}
@@ -1819,11 +1827,11 @@ const styles = StyleSheet.create({
   msgName: { flexShrink: 1, color: '#C9B8FF', fontSize: 13.5, fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 3 },
   msgText: { flex: 1, color: '#fff', fontSize: 13.5, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.85)', textShadowRadius: 3 },
 
-  keyboard: { paddingHorizontal: 8, marginTop: 10, gap: 6 },
+  keyboard: { paddingHorizontal: 4, marginTop: 8, gap: 6 },
   kbInfo: { color: GOLD, fontSize: 12, fontWeight: '800', textAlign: 'center', marginBottom: 2 },
-  kbRow: { flexDirection: 'row', gap: 5 },
-  key: { height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  keyText: { color: '#fff', fontSize: 17, fontWeight: '900' },
+  kbRow: { flexDirection: 'row', gap: 4 },
+  key: { height: 52, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  keyText: { color: '#fff', fontSize: 23, fontWeight: '900' },
 
   bottomBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 2 },
   comment: {
@@ -1938,7 +1946,17 @@ const styles = StyleSheet.create({
   popWrap: { backgroundColor: 'rgba(5,4,20,0.7)', zIndex: 60, justifyContent: 'center', paddingHorizontal: 24 },
   pop: { borderRadius: 22, borderWidth: 2, borderColor: GOLD2, backgroundColor: 'rgba(14,16,52,0.98)', padding: 18, ...glow },
   popPlace: { color: '#fff', fontSize: 18, fontWeight: '900', textAlign: 'center', marginTop: 6 },
-  popRule: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 14, padding: 12, borderRadius: 14, backgroundColor: 'rgba(233,185,73,0.12)', borderWidth: 1, borderColor: 'rgba(233,185,73,0.5)' },
+  popRule: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(233,185,73,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(233,185,73,0.5)',
+  },
   popRuleText: { flex: 1, color: '#fff', fontSize: 13, lineHeight: 18, fontWeight: '700' },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
   menuText: { color: '#fff', fontSize: 15, fontWeight: '800' },
