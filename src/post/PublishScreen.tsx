@@ -24,6 +24,7 @@ import { colors, goldGradient } from '../theme';
 import { auth } from '../lib/firebase';
 import { useSession } from '../lib/session';
 import { COMPRESS_END, hashtagsOf, publishPost, type MediaKind } from './posts';
+import { currentTag, useTagSuggestions } from './hashtags';
 
 // Publier une vidéo ou une photo sur l'accueil :
 // 1. choisir dans la galerie ou filmer / photographier
@@ -35,19 +36,30 @@ const MAX_CAPTION = 300;
 
 type Picked = { uri: string; width: number; height: number; duration: number | null };
 
-export function PublishScreen({ kind, onClose, onPublished }: { kind: MediaKind | null; onClose: () => void; onPublished: () => void }) {
+export function PublishScreen({
+  kind,
+  initialCaption = '',
+  onClose,
+  onPublished,
+}: {
+  kind: MediaKind | null;
+  /** légende de départ (ex. « #zembochallenge » depuis la page d'un hashtag) */
+  initialCaption?: string;
+  onClose: () => void;
+  onPublished: () => void;
+}) {
   return (
     <Modal visible={kind !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaProvider>{kind && <Body kind={kind} onClose={onClose} onPublished={onPublished} />}</SafeAreaProvider>
+      <SafeAreaProvider>{kind && <Body kind={kind} initialCaption={initialCaption} onClose={onClose} onPublished={onPublished} />}</SafeAreaProvider>
     </Modal>
   );
 }
 
-function Body({ kind, onClose, onPublished }: { kind: MediaKind; onClose: () => void; onPublished: () => void }) {
+function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind; initialCaption: string; onClose: () => void; onPublished: () => void }) {
   const insets = useSafeAreaInsets();
   const { profile } = useSession();
   const [picked, setPicked] = useState<Picked | null>(null);
-  const [caption, setCaption] = useState('');
+  const [caption, setCaption] = useState(initialCaption);
   const [progress, setProgress] = useState<number | null>(null);
   const isVideo = kind === 'video';
   const signedIn = !!auth.currentUser;
@@ -126,6 +138,16 @@ function Body({ kind, onClose, onPublished }: { kind: MediaKind; onClose: () => 
   };
 
   const tags = hashtagsOf(caption);
+  // hashtag en cours de frappe : suggestions ; sinon : tendances
+  const typing = currentTag(caption);
+  const suggestions = useTagSuggestions(typing ?? '');
+  const shownTags = suggestions.filter((t) => !tags.includes(t.tag) || t.tag === typing);
+  const putTag = (tag: string) => {
+    setCaption((c) => {
+      const base = currentTag(c) !== null ? c.replace(/#[\p{L}\p{N}_]*$/u, '') : c && !c.endsWith(' ') ? `${c} ` : c;
+      return `${base}#${tag} `.slice(0, MAX_CAPTION);
+    });
+  };
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -184,6 +206,27 @@ function Body({ kind, onClose, onPublished }: { kind: MediaKind; onClose: () => 
                 {caption.length}/{MAX_CAPTION}
               </Text>
             </View>
+            {(shownTags.length > 0 || (typing && typing.length > 1)) && (
+              <View style={styles.tagBox}>
+                <Text style={styles.tagBoxTitle}>{typing ? 'Hashtags' : 'Hashtags populaires'}</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 8 }}>
+                  {typing && typing.length > 1 && !shownTags.some((t) => t.tag === typing) && (
+                    <Pressable onPress={() => putTag(typing)} style={[styles.tagChip, styles.tagChipNew]}>
+                      <Text style={styles.tagChipText}>#{typing}</Text>
+                      <Text style={styles.tagChipCount}>nouveau</Text>
+                    </Pressable>
+                  )}
+                  {shownTags.map((t) => (
+                    <Pressable key={t.tag} onPress={() => putTag(t.tag)} style={styles.tagChip}>
+                      <Text style={styles.tagChipText}>#{t.tag}</Text>
+                      <Text style={styles.tagChipCount}>
+                        {t.count} vidéo{t.count > 1 ? 's' : ''}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
             <View style={styles.note}>
               <Ionicons name="earth" size={16} color={colors.gold} />
               <Text style={styles.noteText}>Publique : visible par tout le monde sur l’accueil et sur ton profil.</Text>
@@ -310,6 +353,12 @@ const styles = StyleSheet.create({
   inputFoot: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 10 },
   tags: { flex: 1, color: colors.gold, fontSize: 13, fontWeight: '700' },
   count: { color: colors.textFaint, fontSize: 12 },
+  tagBox: { marginTop: 12 },
+  tagBoxTitle: { color: colors.textDim, fontSize: 12, fontWeight: '800', marginBottom: 8 },
+  tagChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border },
+  tagChipNew: { borderColor: 'rgba(212,175,55,0.6)', borderStyle: 'dashed' },
+  tagChipText: { color: colors.gold, fontSize: 14, fontWeight: '800' },
+  tagChipCount: { color: colors.textFaint, fontSize: 11, marginTop: 1 },
   note: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, padding: 12, borderRadius: 14, backgroundColor: 'rgba(212,175,55,0.08)' },
   noteText: { flex: 1, color: colors.textDim, fontSize: 13, lineHeight: 18 },
   footer: { paddingHorizontal: 16, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },

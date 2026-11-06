@@ -82,11 +82,30 @@ async function bumpFollow(uid, fid, n) {
 exports.followAdded = onDocumentCreated(on('users/{uid}/followers/{fid}'), (e) => bumpFollow(e.params.uid, e.params.fid, 1));
 exports.followRemoved = onDocumentDeleted(on('users/{uid}/followers/{fid}'), (e) => bumpFollow(e.params.uid, e.params.fid, -1));
 
-/** Publication supprimée : on efface ses j'aime et commentaires, et on retire ses j'aime du total de l'auteur */
+// ── Hashtags : hashtags/{tag} = nombre de publications qui l'utilisent ──
+
+const TAG = /^[\p{L}\p{N}_]{1,40}$/u;
+async function bumpTags(tags, n) {
+  const db = getFirestore();
+  const list = [...new Set((Array.isArray(tags) ? tags : []).filter((t) => typeof t === 'string' && TAG.test(t)))].slice(0, 10);
+  await Promise.all(
+    list.map((t) =>
+      db.doc(`hashtags/${t}`).set(
+        n > 0 ? { count: FieldValue.increment(n), lastAt: FieldValue.serverTimestamp() } : { count: FieldValue.increment(n) },
+        { merge: true },
+      ),
+    ),
+  );
+}
+exports.postAdded = onDocumentCreated(on('posts/{postId}'), (e) => bumpTags(e.data?.data()?.hashtags, 1));
+
+/** Publication supprimée : on efface ses j'aime et commentaires, on retire ses j'aime du total de l'auteur
+ *  et on décompte ses hashtags */
 exports.postRemoved = onDocumentDeleted(on('posts/{postId}'), async (e) => {
   const db = getFirestore();
   const data = e.data?.data();
   await db.recursiveDelete(db.doc(`posts/${e.params.postId}`));
+  await bumpTags(data?.hashtags, -1);
   if (data?.uid && data.likes > 0) {
     await db.doc(`profiles/${data.uid}`).set({ likes: FieldValue.increment(-data.likes) }, { merge: true });
   }

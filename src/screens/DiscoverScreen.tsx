@@ -10,6 +10,8 @@ import { DISCOVER_POSTS, LIVE_NOW, SUGGESTED, TRENDING_TAGS } from '../data/soci
 import { formatCount } from '../utils/format';
 import { VideoViewer } from '../components/VideoViewer';
 import { LiveScreen } from './LiveScreen';
+import { HashtagPage } from '../post/HashtagPage';
+import { useTagSuggestions } from '../post/hashtags';
 
 // Onglet Découvrir : recherche, lives en cours, tendances et suggestions
 export function DiscoverScreen() {
@@ -21,6 +23,10 @@ export function DiscoverScreen() {
   const [followed, setFollowed] = useState<Record<string, boolean>>({});
   const [viewer, setViewer] = useState<{ posts: Post[]; start: number } | null>(null);
   const [live, setLive] = useState<Post | null>(null);
+  const [tagPage, setTagPage] = useState<string | null>(null);
+  // tendances : vrais hashtags les plus utilisés, puis les exemples
+  const trending = useTagSuggestions('');
+  const tagList = useMemo(() => [...new Set([...trending.map((t) => t.tag), ...TRENDING_TAGS])].slice(0, 14), [trending]);
 
   const q = query.trim().toLowerCase().replace(/^#/, '');
   const posts = useMemo(() => {
@@ -109,10 +115,10 @@ export function DiscoverScreen() {
 
             {/* hashtags tendance */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tags}>
-              {TRENDING_TAGS.map((t) => {
+              {tagList.map((t) => {
                 const on = tag === t;
                 return (
-                  <Pressable key={t} onPress={() => setTag(on ? null : t)} style={[styles.tag, on && styles.tagOn]}>
+                  <Pressable key={t} onPress={() => setTagPage(t)} style={[styles.tag, on && styles.tagOn]}>
                     <Text style={[styles.tagText, on && styles.tagTextOn]}>#{t}</Text>
                   </Pressable>
                 );
@@ -171,6 +177,7 @@ export function DiscoverScreen() {
 
       <VideoViewer posts={viewer?.posts ?? []} start={viewer?.start ?? null} onClose={() => setViewer(null)} />
       <LiveScreen post={live} onClose={() => setLive(null)} />
+      <HashtagPage tag={tagPage} onClose={() => setTagPage(null)} />
     </View>
   );
 }

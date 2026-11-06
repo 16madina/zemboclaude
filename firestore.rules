@@ -55,6 +55,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Hashtags : nombre de publications par hashtag, tenu par le serveur
+    match /hashtags/{tag} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Réservation des pseudos Zembo (un pseudo = un compte).
     // Lecture ouverte : l'inscription vérifie si le pseudo est libre avant de créer le compte.
     match /usernames/{name} {

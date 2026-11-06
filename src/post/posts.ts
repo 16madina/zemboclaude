@@ -59,7 +59,8 @@ export function toPost(id: string, d: DocumentData): Post {
     uid: p.uid,
     createdAt: p.createdAt?.toMillis() ?? Date.now(),
     user: { handle: p.pseudo, name: p.name || p.pseudo, avatar: DEFAULT_AVATAR },
-    caption: p.caption ?? '',
+    // les #hashtags sont affichés à part (cliquables) : on les retire du texte
+    caption: (p.caption ?? '').replace(/#[\p{L}\p{N}_]+/gu, '').replace(/\s{2,}/g, ' ').trim(),
     hashtags: p.hashtags ?? [],
     sound: p.kind === 'photo' ? `Photo de ${p.pseudo}` : `son original - ${p.pseudo}`,
     likes: p.likes ?? 0,

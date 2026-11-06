@@ -5,11 +5,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors, goldGradient, textShadow } from '../theme';
 import { formatCount } from '../utils/format';
 import type { Post } from '../data/feed';
+import { useOpenHashtag } from '../post/hashtags';
 
 // Bloc en bas à gauche : pseudo, légende, son
 export function PostInfo({ post, active, onOpenLive }: { post: Post; active: boolean; onOpenLive?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const isLive = post.kind === 'live';
+  const openTag = useOpenHashtag();
 
   return (
     <View style={styles.wrap} pointerEvents="box-none">
@@ -32,7 +34,12 @@ export function PostInfo({ post, active, onOpenLive }: { post: Post; active: boo
       <Pressable onPress={() => setExpanded((e) => !e)}>
         <Text style={styles.caption} numberOfLines={expanded ? undefined : 2}>
           {isLive ? post.liveTitle : post.caption}{' '}
-          {!isLive && post.hashtags.map((h) => <Text key={h} style={styles.tag}>#{h} </Text>)}
+          {!isLive &&
+            post.hashtags.map((h) => (
+              <Text key={h} style={styles.tag} onPress={() => openTag(h)} suppressHighlighting>
+                #{h}{' '}
+              </Text>
+            ))}
         </Text>
       </Pressable>
 
