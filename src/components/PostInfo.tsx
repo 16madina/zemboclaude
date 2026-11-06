@@ -6,12 +6,14 @@ import { colors, goldGradient, textShadow } from '../theme';
 import { formatCount } from '../utils/format';
 import type { Post } from '../data/feed';
 import { useOpenHashtag } from '../post/hashtags';
+import { usePostActions } from '../post/sounds';
 
 // Bloc en bas à gauche : pseudo, légende, son
 export function PostInfo({ post, active, onOpenLive }: { post: Post; active: boolean; onOpenLive?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const isLive = post.kind === 'live';
   const openTag = useOpenHashtag();
+  const { openSound } = usePostActions();
 
   return (
     <View style={styles.wrap} pointerEvents="box-none">
@@ -51,10 +53,10 @@ export function PostInfo({ post, active, onOpenLive }: { post: Post; active: boo
           </LinearGradient>
         </Pressable>
       ) : (
-        <View style={styles.soundRow}>
+        <Pressable style={styles.soundRow} onPress={() => openSound(post)} hitSlop={6}>
           <Ionicons name="musical-notes" size={14} color={colors.white} style={textShadow} />
           <Marquee text={post.sound} running={active} />
-        </View>
+        </Pressable>
       )}
     </View>
   );

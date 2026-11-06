@@ -33,7 +33,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Zembo a besoin de tes photos pour ton profil World Room."
+          "photosPermission": "Zembo a besoin de tes photos et vidéos pour que tu puisses les publier."
         }
       ],
       "expo-audio",
@@ -43,6 +43,14 @@
         {
           "cameraPermission": "Zembo utilise ta caméra pour te montrer en direct quand tu montes sur scène.",
           "microphonePermission": "Zembo utilise ton micro pour que tu parles en direct pendant les lives."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Zembo utilise ta caméra pour filmer tes vidéos, tes Duos et pour te montrer en direct.",
+          "microphonePermission": "Zembo utilise ton micro pour enregistrer le son de tes vidéos et parler en direct.",
+          "recordAudioAndroid": true
         }
       ]
     ],

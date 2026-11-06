@@ -44,10 +44,13 @@ export function EditorScreen({
   uri,
   duration: knownDuration,
   initial,
+  lockedSound,
   onBack,
   onDone,
 }: {
   kind: MediaKind;
+  /** son imposé (« Utiliser ce son », Duo) : pas d'outil Musique */
+  lockedSound?: string;
   uri: string;
   /** durée connue (secondes) */
   duration: number | null;
@@ -72,6 +75,7 @@ export function EditorScreen({
         { id: 'filter', icon: 'color-filter', label: 'Filtres' },
         { id: 'music', icon: 'musical-notes', label: 'Musique' },
       ];
+  if (lockedSound) tools.splice(tools.findIndex((t) => t.id === 'music'), 1);
   const [tool, setTool] = useState<Tool>(tools[0].id);
   const [edit, setEdit] = useState<PostEdit>(initial ?? {});
   const set = (patch: Partial<PostEdit>) => setEdit((e) => ({ ...e, ...patch }));

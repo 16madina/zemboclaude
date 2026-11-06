@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors, goldGradient, textShadow } from '../theme';
 import { formatCount } from '../utils/format';
 import type { Post } from '../data/feed';
+import { usePostActions } from '../post/sounds';
 
 type Props = {
   post: Post;
@@ -41,6 +42,7 @@ export function ActionRail({
   onAvatar,
 }: Props) {
   const isLive = post.kind === 'live';
+  const { openSound } = usePostActions();
 
   return (
     <View style={styles.rail} pointerEvents="box-none">
@@ -88,7 +90,11 @@ export function ActionRail({
       )}
       <RailButton icon="arrow-redo" label={formatCount(post.shares)} onPress={onShare} />
 
-      {!isLive && <SoundDisc avatar={post.user.avatar} spinning={spinning} />}
+      {!isLive && (
+        <Pressable onPress={() => openSound(post)} hitSlop={6}>
+          <SoundDisc avatar={post.user.avatar} spinning={spinning} />
+        </Pressable>
+      )}
     </View>
   );
 }

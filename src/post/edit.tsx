@@ -110,11 +110,20 @@ export const trackOf = (id?: string | null) => TRACKS.find((t) => t.id === id);
  * Applique le montage à un lecteur vidéo : coupe (boucle entre début et fin), volume, musique.
  * `active` : la vidéo est à l'écran et joue.
  */
-export function useEditPlayback(player: VideoPlayer, edit: PostEdit | undefined, active: boolean) {
+export function useEditPlayback(
+  player: VideoPlayer,
+  edit: PostEdit | undefined,
+  active: boolean,
+  /** son repris d'une autre vidéo (« Utiliser ce son », Duo) : lu à la place de la musique */
+  sound?: { url?: string; start?: number } | null,
+) {
   const start = edit?.start ?? 0;
   const end = edit?.end;
-  const track = trackOf(edit?.music?.id);
-  const music = useAudioPlayer(track?.file ?? null);
+  const trackFile = trackOf(edit?.music?.id)?.file;
+  const soundUrl = !trackFile ? sound?.url : undefined;
+  const soundStart = soundUrl ? (sound?.start ?? 0) : 0;
+  const track = trackFile || soundUrl ? true : null;
+  const music = useAudioPlayer(trackFile ?? (soundUrl ? { uri: soundUrl } : null));
   const last = useRef(0);
 
   // volume du son d'origine
@@ -128,10 +137,13 @@ export function useEditPlayback(player: VideoPlayer, edit: PostEdit | undefined,
   useEffect(() => {
     if (!track) return;
     music.loop = true;
-    music.volume = edit?.music?.volume ?? 0.8;
-    if (active) music.play();
+    music.volume = trackFile ? (edit?.music?.volume ?? 0.8) : 1;
+    if (active) {
+      if (soundStart && music.currentTime < soundStart) music.seekTo(soundStart).catch(() => {});
+      music.play();
+    }
     else music.pause();
-  }, [music, track, active, edit?.music?.volume]);
+  }, [music, track, active, edit?.music?.volume, trackFile, soundStart]);
 
   // coupe : on repart au début choisi et on boucle avant la fin choisie
   useEffect(() => {
@@ -146,15 +158,15 @@ export function useEditPlayback(player: VideoPlayer, edit: PostEdit | undefined,
         try {
           player.currentTime = start;
         } catch {}
-        if (track) music.seekTo(0).catch(() => {});
+        if (track) music.seekTo(soundStart).catch(() => {});
       };
       if (end !== undefined && currentTime >= end - 0.05) restart();
       else if (currentTime < start - 0.3) restart();
-      else if (track && currentTime + 0.5 < last.current) music.seekTo(0).catch(() => {}); // la vidéo a bouclé seule
+      else if (track && currentTime + 0.5 < last.current) music.seekTo(soundStart).catch(() => {}); // la vidéo a bouclé seule
       last.current = currentTime;
     });
     return () => sub.remove();
-  }, [player, start, end, active, track, music]);
+  }, [player, start, end, active, track, music, soundStart]);
 }
 
 // ── Curseur doré (0 à 1) ──

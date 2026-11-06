@@ -27,6 +27,7 @@ import { COMPRESS_END, hashtagsOf, publishPost, type MediaKind } from './posts';
 import { currentTag, useTagSuggestions } from './hashtags';
 import { EditorScreen } from './EditorScreen';
 import { FilterLayer, TextsLayer, useEditPlayback, type PostEdit } from './edit';
+import type { DuoRef, SoundRef } from './sounds';
 
 // Publier une vidéo ou une photo sur l'accueil :
 // 1. choisir dans la galerie ou filmer / photographier
@@ -38,30 +39,47 @@ const MAX_CAPTION = 300;
 
 type Picked = { uri: string; width: number; height: number; duration: number | null };
 
+/** Vidéo déjà filmée dans Zembo (avec un son repris ou en Duo) */
+export type PublishPreset = { picked: Picked; edit?: PostEdit; soundRef?: SoundRef; duo?: DuoRef };
+
 export function PublishScreen({
   kind,
   initialCaption = '',
+  preset,
   onClose,
   onPublished,
 }: {
   kind: MediaKind | null;
   /** légende de départ (ex. « #zembochallenge » depuis la page d'un hashtag) */
   initialCaption?: string;
+  preset?: PublishPreset;
   onClose: () => void;
   onPublished: () => void;
 }) {
   return (
     <Modal visible={kind !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaProvider>{kind && <Body kind={kind} initialCaption={initialCaption} onClose={onClose} onPublished={onPublished} />}</SafeAreaProvider>
+      <SafeAreaProvider>{kind && <Body kind={kind} initialCaption={initialCaption} preset={preset} onClose={onClose} onPublished={onPublished} />}</SafeAreaProvider>
     </Modal>
   );
 }
 
-function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind; initialCaption: string; onClose: () => void; onPublished: () => void }) {
+function Body({
+  kind,
+  initialCaption,
+  preset,
+  onClose,
+  onPublished,
+}: {
+  kind: MediaKind;
+  initialCaption: string;
+  preset?: PublishPreset;
+  onClose: () => void;
+  onPublished: () => void;
+}) {
   const insets = useSafeAreaInsets();
   const { profile } = useSession();
-  const [picked, setPicked] = useState<Picked | null>(null);
-  const [edit, setEdit] = useState<PostEdit>({});
+  const [picked, setPicked] = useState<Picked | null>(preset?.picked ?? null);
+  const [edit, setEdit] = useState<PostEdit>(preset?.edit ?? {});
   const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState(initialCaption);
   const [progress, setProgress] = useState<number | null>(null);
@@ -113,6 +131,8 @@ function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind;
           kind,
           ...picked,
           edit,
+          soundRef: preset?.soundRef,
+          duo: preset?.duo,
           caption,
           pseudo: profile?.pseudo || 'membre',
           name: [profile?.prenom, profile?.nom].filter(Boolean).join(' ') || profile?.pseudo || 'Membre Zembo',
@@ -164,6 +184,7 @@ function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind;
         uri={picked.uri}
         duration={picked.duration}
         initial={edit}
+        lockedSound={preset?.soundRef?.title ?? (preset?.duo ? `Duo avec @${preset.duo.pseudo}` : undefined)}
         onBack={() => setEditing(false)}
         onDone={(e) => {
           setEdit(e);
@@ -207,7 +228,7 @@ function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind;
                 <Ionicons name="color-wand" size={15} color={colors.bg} />
                 <Text style={styles.modifyText}>Modifier</Text>
               </Pressable>
-              <Pressable onPress={() => setPicked(null)} style={styles.change} disabled={progress !== null}>
+              <Pressable onPress={() => setPicked(null)} style={[styles.change, !!preset && { display: 'none' }]} disabled={progress !== null}>
                 <Ionicons name="swap-horizontal" size={15} color="#fff" />
                 <Text style={styles.changeText}>Changer</Text>
               </Pressable>

@@ -1,5 +1,6 @@
 // Données de démonstration. Plus tard, elles viendront du backend Zembo.
 import type { PostEdit } from '../post/edit';
+import type { DuoRef, SoundRef } from '../post/sounds';
 
 export type User = {
   handle: string;
@@ -21,6 +22,10 @@ export type Post = {
   createdAt?: number;
   /** montage appliqué à la lecture (coupe, son, musique, textes, filtre) */
   edit?: PostEdit;
+  /** son utilisé (« Utiliser ce son ») */
+  soundRef?: SoundRef;
+  /** Duo : la vidéo d'origine, jouée à côté */
+  duo?: DuoRef;
   user: User;
   caption: string;
   hashtags: string[];

@@ -8,8 +8,7 @@ import { VideoPost } from './VideoPost';
 import { CommentsSheet } from './CommentsSheet';
 import { ShareSheet } from './ShareSheet';
 import { UserProfile, type ProfileTarget } from '../post/UserProfile';
-import { OpenHashtagContext } from '../post/hashtags';
-import { HashtagPage } from '../post/HashtagPage';
+import { PostActionsHost } from '../post/PostActionsHost';
 
 // Lecteur plein écran ouvert depuis une grille (Découvrir, Profil, messages)
 export function VideoViewer({ posts, start, onClose }: { posts: Post[]; start: number | null; onClose: () => void }) {
@@ -34,11 +33,11 @@ function Viewer({ posts, start, onClose }: { posts: Post[]; start: number; onClo
   const openShare = useCallback((p: Post) => setShareFor(p), []);
   const noop = useCallback(() => {}, []);
   const [profileOf, setProfileOf] = useState<ProfileTarget | null>(null);
-  const [tagOf, setTagOf] = useState<string | null>(null);
+  const [tagOf, setTagOf] = useState(false);
   const openProfile = useCallback((p: Post) => p.uid && setProfileOf({ uid: p.uid, pseudo: p.user.handle, name: p.user.name }), []);
 
   return (
-    <OpenHashtagContext.Provider value={setTagOf}>
+    <PostActionsHost onBusy={setTagOf}>
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <View style={{ flex: 1 }} onLayout={(e) => setHeight(Math.round(e.nativeEvent.layout.height))}>
         {height > 0 && (
@@ -73,9 +72,8 @@ function Viewer({ posts, start, onClose }: { posts: Post[]; start: number; onClo
       <CommentsSheet post={commentsFor} onClose={() => setCommentsFor(null)} />
       <ShareSheet post={shareFor} onClose={() => setShareFor(null)} />
       <UserProfile target={profileOf} onClose={() => setProfileOf(null)} />
-      <HashtagPage tag={tagOf} onClose={() => setTagOf(null)} />
     </View>
-    </OpenHashtagContext.Provider>
+    </PostActionsHost>
   );
 }
 

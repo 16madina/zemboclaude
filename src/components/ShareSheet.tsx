@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme';
 import { CONTACTS, type Post } from '../data/feed';
+import { usePostActions } from '../post/sounds';
 
 type Icon = keyof typeof Ionicons.glyphMap;
 
@@ -17,11 +18,12 @@ const APPS: { label: string; icon: Icon; bg: string }[] = [
   { label: 'E-mail', icon: 'mail', bg: '#5E5CE6' },
 ];
 
-const ACTIONS: { label: string; icon: Icon }[] = [
+const ACTIONS: { label: string; icon: Icon; id?: 'duo' | 'sound' }[] = [
+  { label: 'Duo', icon: 'copy-outline', id: 'duo' },
+  { label: 'Utiliser ce son', icon: 'musical-notes-outline', id: 'sound' },
   { label: 'Signaler', icon: 'flag-outline' },
   { label: 'Pas intéressé', icon: 'heart-dislike-outline' },
   { label: 'Enregistrer la vidéo', icon: 'download-outline' },
-  { label: 'Duo', icon: 'copy-outline' },
   { label: 'Collage', icon: 'cut-outline' },
   { label: 'Favoris', icon: 'bookmark-outline' },
   { label: 'Fond d\'écran', icon: 'phone-portrait-outline' },
@@ -30,6 +32,15 @@ const ACTIONS: { label: string; icon: Icon }[] = [
 // Panneau « Partager »
 export function ShareSheet({ post, onClose }: { post: Post | null; onClose: () => void }) {
   const insets = useSafeAreaInsets();
+  const { startDuo, openSound } = usePostActions();
+  const isVideo = post?.kind === 'video';
+  // le panneau se ferme d'abord, puis la caméra (Duo) ou la page du son s'ouvre
+  const act = (id?: 'duo' | 'sound') => {
+    if (!post || !id) return;
+    const p = post;
+    onClose();
+    setTimeout(() => (id === 'duo' ? startDuo(p) : openSound(p)), 450);
+  };
   return (
     <Modal visible={!!post} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={{ flex: 1 }} onPress={onClose} />
@@ -64,9 +75,9 @@ export function ShareSheet({ post, onClose }: { post: Post | null; onClose: () =
         </ScrollView>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-          {ACTIONS.map((a) => (
-            <Pressable key={a.label} style={styles.cell}>
-              <View style={[styles.circle, styles.actionCircle]}>
+          {ACTIONS.filter((a) => isVideo || !a.id).map((a) => (
+            <Pressable key={a.label} style={styles.cell} onPress={() => act(a.id)}>
+              <View style={[styles.circle, styles.actionCircle, a.id && styles.actionGold]}>
                 <Ionicons name={a.icon} size={24} color={colors.goldLight} />
               </View>
               <Text style={styles.cellLabel} numberOfLines={2}>
@@ -99,6 +110,7 @@ const styles = StyleSheet.create({
   contact: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.surface2 },
   circle: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
   actionCircle: { backgroundColor: colors.surface2, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  actionGold: { borderWidth: 1.5, borderColor: colors.gold },
   cellLabel: { color: colors.textDim, fontSize: 11.5, marginTop: 6, textAlign: 'center' },
   sep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginHorizontal: 14, marginVertical: 4 },
   cancel: {

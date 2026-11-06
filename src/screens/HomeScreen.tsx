@@ -11,8 +11,7 @@ import { useFeedPosts } from '../post/posts';
 import { useFollowingFeed } from '../post/social';
 import { UserProfile, type ProfileTarget } from '../post/UserProfile';
 import { useSession } from '../lib/session';
-import { OpenHashtagContext } from '../post/hashtags';
-import { HashtagPage } from '../post/HashtagPage';
+import { PostActionsHost } from '../post/PostActionsHost';
 
 
 // Page d'accueil : vidéos plein écran qui défilent verticalement
@@ -28,7 +27,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
   const { user } = useSession();
   const followed = useFollowingFeed(user?.uid);
   const [profileOf, setProfileOf] = useState<ProfileTarget | null>(null);
-  const [tagOf, setTagOf] = useState<string | null>(null);
+  const [tagOf, setTagOf] = useState(false);
   const openProfile = useCallback((p: Post) => p.uid && setProfileOf({ uid: p.uid, pseudo: p.user.handle, name: p.user.name }), []);
   const listRef = useRef<FlatList<Post>>(null);
   // les vraies publications des membres passent en premier, puis les exemples (retirés avant le lancement)
@@ -62,7 +61,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
   const firstLive = useMemo(() => FEED.find((p) => p.kind === 'live') ?? null, []);
 
   return (
-    <OpenHashtagContext.Provider value={setTagOf}>
+    <PostActionsHost onBusy={setTagOf}>
     <View style={styles.root} onLayout={(e) => setHeight(Math.round(e.nativeEvent.layout.height))}>
       {height > 0 && (
         <FlatList
@@ -99,9 +98,8 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
       <ShareSheet post={shareFor} onClose={() => setShareFor(null)} />
       <LiveScreen post={live} onClose={() => setLive(null)} />
       <UserProfile target={profileOf} onClose={() => setProfileOf(null)} />
-      <HashtagPage tag={tagOf} onClose={() => setTagOf(null)} />
     </View>
-    </OpenHashtagContext.Provider>
+    </PostActionsHost>
   );
 }
 

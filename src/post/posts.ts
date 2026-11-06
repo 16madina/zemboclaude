@@ -19,6 +19,7 @@ import { File, Paths } from 'expo-file-system';
 import { app, auth, db } from '../lib/firebase';
 import type { Post } from '../data/feed';
 import type { PostEdit } from './edit';
+import type { DuoRef, SoundRef } from './sounds';
 
 // Publications des membres (vidéos et photos) :
 // - le fichier et sa miniature vont dans Firebase Storage (posts/{uid}/{id}/…)
@@ -47,6 +48,9 @@ export type PostDoc = {
   shares: number;
   saves: number;
   edit?: PostEdit;
+  soundId?: string;
+  sound?: SoundRef;
+  duo?: DuoRef;
 };
 
 /** Fiche Firestore -> publication affichable dans le fil */
@@ -64,7 +68,9 @@ export function toPost(id: string, d: DocumentData): Post {
     // les #hashtags sont affichés à part (cliquables) : on les retire du texte
     caption: (p.caption ?? '').replace(/#[\p{L}\p{N}_]+/gu, '').replace(/\s{2,}/g, ' ').trim(),
     hashtags: p.hashtags ?? [],
-    sound: p.kind === 'photo' ? `Photo de ${p.pseudo}` : `son original - ${p.pseudo}`,
+    sound: p.sound?.title ?? (p.kind === 'photo' ? `Photo de ${p.pseudo}` : `son original - ${p.pseudo}`),
+    soundRef: p.sound ?? undefined,
+    duo: p.duo ?? undefined,
     likes: p.likes ?? 0,
     comments: p.comments ?? 0,
     saves: p.saves ?? 0,
@@ -234,6 +240,10 @@ export type NewPost = {
   name: string;
   /** montage (éditeur) */
   edit?: PostEdit;
+  /** son repris d'une autre publication ou d'une musique Zembo */
+  soundRef?: SoundRef;
+  /** Duo avec une autre vidéo */
+  duo?: DuoRef;
 };
 
 /** Envoie le fichier (vidéo compressée), sa miniature, puis crée la publication. onProgress va de 0 à 1.
@@ -275,6 +285,10 @@ export async function publishPost(p: NewPost, onProgress?: (r: number) => void) 
     height,
     duration: p.edit?.end !== undefined || p.edit?.start ? Math.max(1, (p.edit?.end ?? p.duration ?? 0) - (p.edit?.start ?? 0)) : p.duration,
     ...(p.edit && Object.keys(p.edit).length ? { edit: p.edit } : {}),
+    // le son de la publication : repris d'une autre, une musique Zembo, ou son propre son
+    soundId: p.soundRef?.id ?? (p.edit?.music ? `track:${p.edit.music.id}` : `post:${id}`),
+    ...(p.soundRef ? { sound: clean(p.soundRef) } : {}),
+    ...(p.duo ? { duo: clean(p.duo) } : {}),
     caption: p.caption.trim().slice(0, 300),
     hashtags: hashtagsOf(p.caption),
     pseudo: p.pseudo,
@@ -287,6 +301,11 @@ export async function publishPost(p: NewPost, onProgress?: (r: number) => void) 
   });
   onProgress?.(1);
   return id;
+}
+
+/** Firestore refuse les champs « undefined » */
+function clean<T extends object>(o: T): T {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 }
 
 /** Supprime une de mes publications (fiche + fichiers) */
