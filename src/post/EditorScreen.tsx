@@ -119,10 +119,11 @@ export function EditorScreen({
   }, [player, isVideo, knownDuration]);
 
   // aperçu : cadre 9:16 qui tient dans l'écran
-  const panelH = 170;
-  const availH = sh - insets.top - insets.bottom - 56 - panelH - 64 - 20;
-  const frameW = Math.min(sw - 32, availH * (9 / 16));
-  const frameH = frameW * (16 / 9);
+  const panelH = 150;
+  const availH = sh - insets.top - insets.bottom - 56 - panelH - 60 - 8;
+  // Duo : les deux cases prennent toute la largeur ; sinon un cadre vertical le plus grand possible
+  const frameW = duo ? sw - 12 : Math.min(sw - 16, availH * (9 / 16));
+  const frameH = duo ? availH : frameW * (16 / 9);
 
   const start = edit.start ?? 0;
   const end = edit.end ?? (duration ? Math.min(duration, MAX) : 0);
@@ -200,13 +201,33 @@ export function EditorScreen({
       {/* réglages de l'outil choisi */}
       <View style={[styles.panel, { height: panelH }]}>
         {tool === 'cut' && <CutTool duration={duration} start={start} end={end} thumbs={thumbs} onChange={(s, e) => set({ start: s, end: e })} />}
-        {tool === 'sound' && (
-          <View style={styles.pad}>
-            <Row icon="volume-high" label="Son de la vidéo" value={edit.volume ?? 1} />
-            <GoldSlider value={edit.volume ?? 1} onChange={(v) => set({ volume: Math.round(v * 20) / 20 })} />
-            <Text style={styles.hint}>{edit.music ? 'Baisse le son de la vidéo pour que la musique ressorte.' : 'Mets 0 % pour couper le son et garder seulement une musique.'}</Text>
-          </View>
-        )}
+        {tool === 'sound' &&
+          (sound ? (
+            // son repris (Duo, « Utiliser ce son ») : deux réglages séparés
+            <View style={styles.pad}>
+              <Row icon="mic" label={duo ? 'Ma voix' : 'Mon micro'} value={edit.volume ?? 1} />
+              <GoldSlider value={edit.volume ?? 1} onChange={(v) => set({ volume: Math.round(v * 20) / 20 })} />
+              <Row
+                icon="musical-notes"
+                label={duo ? 'Vidéo originale' : 'Son choisi'}
+                value={sound.trackId ? (edit.music?.volume ?? 1) : (edit.soundVolume ?? 1)}
+              />
+              <GoldSlider
+                value={sound.trackId ? (edit.music?.volume ?? 1) : (edit.soundVolume ?? 1)}
+                onChange={(v) => {
+                  const r = Math.round(v * 20) / 20;
+                  if (sound.trackId) set({ music: { id: sound.trackId, volume: r } });
+                  else set({ soundVolume: r });
+                }}
+              />
+            </View>
+          ) : (
+            <View style={styles.pad}>
+              <Row icon="volume-high" label="Son de la vidéo" value={edit.volume ?? 1} />
+              <GoldSlider value={edit.volume ?? 1} onChange={(v) => set({ volume: Math.round(v * 20) / 20 })} />
+              <Text style={styles.hint}>{edit.music ? 'Baisse le son de la vidéo pour que la musique ressorte.' : 'Mets 0 % pour couper le son et garder seulement une musique.'}</Text>
+            </View>
+          ))}
         {tool === 'music' && (
           <View style={styles.pad}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>

@@ -30,6 +30,8 @@ export type PostEdit = {
   end?: number;
   /** volume du son de la vidéo (0 à 1) */
   volume?: number;
+  /** volume du son repris (vidéo d'origine d'un Duo, « Utiliser ce son ») */
+  soundVolume?: number;
   music?: { id: string; volume: number } | null;
   texts?: TextItem[];
   filter?: FilterId;
@@ -137,13 +139,13 @@ export function useEditPlayback(
   useEffect(() => {
     if (!track) return;
     music.loop = true;
-    music.volume = trackFile ? (edit?.music?.volume ?? 0.8) : 1;
+    music.volume = trackFile ? (edit?.music?.volume ?? 0.8) : (edit?.soundVolume ?? 1);
     if (active) {
       if (soundStart && music.currentTime < soundStart) music.seekTo(soundStart).catch(() => {});
       music.play();
     }
     else music.pause();
-  }, [music, track, active, edit?.music?.volume, trackFile, soundStart]);
+  }, [music, track, active, edit?.music?.volume, edit?.soundVolume, trackFile, soundStart]);
 
   // coupe : on repart au début choisi et on boucle avant la fin choisie
   useEffect(() => {

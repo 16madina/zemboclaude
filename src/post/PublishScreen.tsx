@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,6 +84,7 @@ function Body({
   onPublished: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const sw = useWindowDimensions().width;
   const { profile } = useSession();
   const [picked, setPicked] = useState<Picked | null>(preset?.picked ?? null);
   const [edit, setEdit] = useState<PostEdit>(preset?.edit ?? {});
@@ -234,10 +236,10 @@ function Body({
       ) : (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView ref={scroll} contentContainerStyle={{ padding: 16, paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
-            <View style={styles.preview}>
+            <View style={[styles.preview, preset?.duo && { width: sw - 32, height: (sw - 32) * 0.9 }]}>
               {isVideo ? <VideoPreview uri={picked.uri} edit={edit} duo={preset?.duo} /> : <Image source={picked.uri} style={StyleSheet.absoluteFill} contentFit="cover" />}
               <FilterLayer id={edit.filter} />
-              <TextsLayer texts={edit.texts} width={200} height={356} />
+              <TextsLayer texts={edit.texts} width={preset?.duo ? sw - 32 : 200} height={preset?.duo ? (sw - 32) * 0.9 : 356} />
               <Pressable onPress={() => setEditing(true)} style={styles.modify} disabled={progress !== null}>
                 <Ionicons name="color-wand" size={15} color={colors.bg} />
                 <Text style={styles.modifyText}>Modifier</Text>
@@ -374,6 +376,7 @@ function Body({
 }
 
 function VideoPreview({ uri, edit, duo }: { uri: string; edit: PostEdit; duo?: DuoRef }) {
+  const duoW = useWindowDimensions().width - 32;
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
     p.muted = true;
@@ -383,7 +386,7 @@ function VideoPreview({ uri, edit, duo }: { uri: string; edit: PostEdit; duo?: D
   // aperçu muet : on garde la coupe, pas la musique
   useEditPlayback(player, { start: edit.start, end: edit.end }, true);
   const me = <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />;
-  if (duo) return <DuoFrame layout={duo.layout} width={200} height={356} pseudo={duo.pseudo} original={<DuoSource duo={duo} own={player} active />} me={me} />;
+  if (duo) return <DuoFrame layout={duo.layout} width={duoW} height={duoW * 0.9} pseudo={duo.pseudo} original={<DuoSource duo={duo} own={player} active />} me={me} />;
   return me;
 }
 
