@@ -23,6 +23,9 @@ import { TableCanvas } from './TableCanvas';
 import { SeatBubble } from './SeatBubble';
 import { useTableLive, type TableLive } from './useTableLive';
 import { GiftSheet, QueueSheet, SeatMenuSheet, SpectatorsSheet } from './TableSheets';
+import { useSession } from '../lib/session';
+import { useHostOnAir } from '../live/onair';
+import { HostCam } from '../live/HostCam';
 
 // Affiché par-dessus l'app, avec une glissade depuis le bas
 export function TableScreen({ config, onClose }: { config: TableConfig | null; onClose: () => void }) {
@@ -61,6 +64,16 @@ function TableRoom({ config, onClose }: { config: TableConfig; onClose: () => vo
   const [menuSeat, setMenuSeat] = useState<number | null>(null);
   const [sheet, setSheet] = useState<'spectators' | 'queue' | 'gift' | null>(null);
   const [burst, setBurst] = useState<{ key: number; emoji: string } | null>(null);
+
+  // le live apparaît sur l'accueil ; les messages des spectateurs arrivent dans le chat de la table
+  const { profile, user } = useSession();
+  const onAir = useHostOnAir('table', {
+    active: !!user,
+    title: config.title,
+    pseudo: profile?.pseudo,
+    name: [profile?.prenom, profile?.nom].filter(Boolean).join(' '),
+    onMessage: (m) => live.post({ name: m.pseudo, text: m.text }),
+  });
 
   return (
     <View style={styles.root}>
@@ -132,7 +145,10 @@ function TableRoom({ config, onClose }: { config: TableConfig; onClose: () => vo
       {burst && <GiftBurst key={burst.key} emoji={burst.emoji} x={g.cx} y={g.cy} onDone={() => setBurst(null)} />}
 
       {/* commentaires + saisie, par-dessus le bas de la table */}
-      <LiveFooter live={live} onGift={() => setSheet('gift')} />
+      <LiveFooter live={live} onGift={() => setSheet('gift')} onSend={onAir.send} />
+
+      {/* ta caméra, telle que la voient les spectateurs de l'accueil */}
+      <HostCam room={onAir.room} viewers={onAir.viewers} name={profile?.pseudo} style={{ top: insets.top + 64, right: 10 }} />
 
       <SpectatorsSheet live={live} visible={sheet === 'spectators'} onClose={() => setSheet(null)} />
       <QueueSheet live={live} visible={sheet === 'queue'} onClose={() => setSheet(null)} />
@@ -143,7 +159,7 @@ function TableRoom({ config, onClose }: { config: TableConfig; onClose: () => vo
 }
 
 // ─── Bas de l'écran : commentaires qui défilent + barre de saisie ─────────
-function LiveFooter({ live, onGift }: { live: TableLive; onGift: () => void }) {
+function LiveFooter({ live, onGift, onSend }: { live: TableLive; onGift: () => void; onSend: (t: string) => void }) {
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -154,6 +170,7 @@ function LiveFooter({ live, onGift }: { live: TableLive; onGift: () => void }) {
     const t = draft.trim();
     if (!t) return;
     live.say(t);
+    onSend(t);
     setDraft('');
     setEmojiOpen(false);
   };

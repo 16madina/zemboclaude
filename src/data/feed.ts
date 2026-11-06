@@ -1,6 +1,7 @@
 // Données de démonstration. Plus tard, elles viendront du backend Zembo.
 import type { PostEdit } from '../post/edit';
 import type { DuoRef, SoundRef } from '../post/sounds';
+import type { OnAirLive } from '../live/onair';
 
 export type User = {
   handle: string;
@@ -38,6 +39,8 @@ export type Post = {
   liveTitle?: string;
   views?: number; // vues (grilles du profil)
   pinned?: boolean;
+  /** vrai live en cours d'un membre (carte LIVE de l'accueil) */
+  onAir?: OnAirLive;
 };
 
 // Vidéos verticales libres de droits (Mixkit)

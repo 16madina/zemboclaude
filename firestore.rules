@@ -98,6 +98,55 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    // Lives en cours, affichés sur l'accueil (salle = format-uid de l'hôte).
+    // L'hôte crée, signe (aliveAt) et retire son live ; le nombre de spectateurs est tenu par le serveur.
+    function liveFields() {
+      return request.resource.data.keys().hasOnly(['uid', 'format', 'title', 'pseudo', 'name', 'startedAt', 'aliveAt', 'viewers'])
+        && request.resource.data.format in ['table', 'slam', 'openmic', 'lettres', 'motdor']
+        && request.resource.data.title is string && request.resource.data.title.size() <= 80
+        && request.resource.data.pseudo is string && request.resource.data.pseudo.size() <= 40
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && request.resource.data.aliveAt is timestamp && request.resource.data.aliveAt <= request.time;
+    }
+    match /onAir/{room} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && room == request.resource.data.format + '-' + request.auth.uid
+        && liveFields()
+        && !('viewers' in request.resource.data);
+      allow update: if isMe(resource.data.uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.format == resource.data.format
+        && liveFields()
+        && (!('viewers' in request.resource.data) || request.resource.data.viewers == resource.data.get('viewers', 0));
+      allow delete: if isMe(resource.data.uid);
+
+      // chat du live : chacun écrit les siens ; l'auteur ou l'hôte peut supprimer un message
+      match /chat/{cid} {
+        allow read: if true;
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['uid', 'pseudo', 'text', 'createdAt'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.pseudo is string && request.resource.data.pseudo.size() <= 40
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 200
+          && request.resource.data.createdAt == request.time
+          && exists(/databases/$(database)/documents/onAir/$(room));
+        allow delete: if signedIn()
+          && (resource.data.uid == request.auth.uid
+            || get(/databases/$(database)/documents/onAir/$(room)).data.uid == request.auth.uid);
+        allow update: if false;
+      }
+      // spectateurs présents
+      match /viewers/{uid} {
+        allow read: if true;
+        allow create: if isMe(uid) && stampOnly() && exists(/databases/$(database)/documents/onAir/$(room));
+        allow delete: if isMe(uid);
+      }
+    }
+
     // Publications (vidéos et photos) : visibles par tous, chacun ne publie et ne supprime que les siennes.
     // Les compteurs (j'aime, commentaires…) partent de 0 ; l'auteur peut seulement modifier sa légende.
     match /posts/{id} {

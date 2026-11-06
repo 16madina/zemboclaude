@@ -26,6 +26,7 @@ import { findPerson } from '../world/data';
 import { useSession } from '../lib/session';
 import { auth } from '../lib/firebase';
 import { CameraFeed, CameraPreview, mediaAvailable, useLiveMedia } from '../live/media';
+import { useHostOnAir } from '../live/onair';
 import { Backdrop, RoundGold } from './LettresDor';
 import { PlayerSheet } from './PlayerSheet';
 import { BOTS, LEVEL_INFO } from './bots';
@@ -252,6 +253,15 @@ function Game({ onClose }: { onClose: () => void }) {
     publish: camReady && meOnStage,
     mic: myMic && phase === 'turn' && activeId === 'me', // fermé pour tous les autres, impossible à rallumer
     name: profile?.pseudo,
+  });
+
+  // le live apparaît sur l'accueil ; les messages des spectateurs arrivent dans le chat
+  const onAir = useHostOnAir('motdor', {
+    active: !!liveRoom,
+    title: 'Mot d’Or',
+    pseudo: profile?.pseudo,
+    name: [profile?.prenom, profile?.nom].filter(Boolean).join(' '),
+    onMessage: (m) => chat.push(m.pseudo, m.text),
   });
 
   // ── la partie ──
@@ -660,6 +670,7 @@ function Game({ onClose }: { onClose: () => void }) {
     if (!t) return;
     tap();
     chat.push(profile?.pseudo ?? 'Toi', t, true);
+    onAir.send(t);
     setDraft('');
   };
   const replyTo = (user: string) => {

@@ -43,7 +43,7 @@ export type MediaStatus = 'off' | 'connecting' | 'on' | 'error';
  * - `publish` : ta caméra est diffusée (tu es sur scène) ;
  * - `mic` : ton micro est ouvert (coupé pendant le chrono, par exemple).
  */
-export function useLiveMedia(room: string | null, opts: { publish: boolean; mic: boolean; name?: string }) {
+export function useLiveMedia(room: string | null, opts: { publish: boolean; mic: boolean; name?: string; audio?: boolean; camera?: boolean }) {
   const [status, setStatus] = useState<MediaStatus>('off');
   const [error, setError] = useState<string | null>(null);
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
@@ -75,8 +75,22 @@ export function useLiveMedia(room: string | null, opts: { publish: boolean; mic:
       const getToken = httpsCallable<{ room: string; name?: string }, TokenReply>(functions, 'livekitToken');
       const { data } = await getToken({ room, name: opts.name });
       if (!alive) return;
-      await r.connect(data.url, data.token);
+      // aperçu muet (fil d'accueil) : on ne reçoit que les images
+      const videoOnly = opts.audio === false;
+      if (videoOnly) {
+        r.on(RoomEvent.TrackPublished, (pub) => {
+          if (pub.kind === lk!.Track.Kind.Video) pub.setSubscribed(true);
+        });
+      }
+      await r.connect(data.url, data.token, { autoSubscribe: !videoOnly });
       if (!alive) return;
+      if (videoOnly) {
+        r.remoteParticipants.forEach((p) =>
+          p.trackPublications.forEach((pub) => {
+            if (pub.kind === lk!.Track.Kind.Video) pub.setSubscribed(true);
+          }),
+        );
+      }
       setStatus('on');
     })().catch((e: unknown) => {
       if (!alive) return;
@@ -98,9 +112,9 @@ export function useLiveMedia(room: string | null, opts: { publish: boolean; mic:
   useEffect(() => {
     const r = roomRef.current;
     if (status !== 'on' || !r) return;
-    r.localParticipant.setCameraEnabled(opts.publish).catch(() => {});
+    r.localParticipant.setCameraEnabled(opts.publish && opts.camera !== false).catch(() => {});
     r.localParticipant.setMicrophoneEnabled(opts.publish && opts.mic).catch(() => {});
-  }, [status, opts.publish, opts.mic]);
+  }, [status, opts.publish, opts.mic, opts.camera]);
 
   /** La caméra d'un joueur ('me' pour toi, sinon son identifiant Zembo), ou null */
   const cameraOf = (who: string): TrackRef | null => {
@@ -110,6 +124,20 @@ export function useLiveMedia(room: string | null, opts: { publish: boolean; mic:
     const pub = p?.getTrackPublication(lk.Track.Source.Camera);
     if (!p || !pub?.track || pub.isMuted) return null;
     return { participant: p, publication: pub, source: lk.Track.Source.Camera } as TrackRef;
+  };
+
+  /** Toutes les caméras allumées des autres personnes de la salle (pour les spectateurs) */
+  const cameras = (): { id: string; name: string; track: TrackRef }[] => {
+    const r = roomRef.current;
+    if (!lk || !r || status !== 'on') return [];
+    const out: { id: string; name: string; track: TrackRef }[] = [];
+    r.remoteParticipants.forEach((p) => {
+      const pub = p.getTrackPublication(lk!.Track.Source.Camera);
+      if (pub?.track && !pub.isMuted) {
+        out.push({ id: p.identity, name: p.name || '', track: { participant: p, publication: pub, source: lk!.Track.Source.Camera } as TrackRef });
+      }
+    });
+    return out;
   };
 
   /** Passe de la caméra avant à la caméra arrière (et inversement) */
@@ -127,7 +155,7 @@ export function useLiveMedia(room: string | null, opts: { publish: boolean; mic:
     }
   };
 
-  return { status, error, cameraOf, flipCamera, facing };
+  return { status, error, cameraOf, cameras, flipCamera, facing };
 }
 
 /** Image d'une caméra du live (rien si elle n'est pas disponible) */

@@ -26,13 +26,16 @@ exports.livekitToken = onCall({ region: 'europe-west1', secrets: [LIVEKIT_API_KE
   if (!/^[A-Za-z0-9_-]{3,64}$/.test(room)) throw new HttpsError('invalid-argument', 'Nom de salle invalide.');
   const name = String(req.data?.name ?? '').slice(0, 40);
 
-  // le premier qui ouvre la salle en devient l'hôte
+  // l'hôte est écrit dans le nom de la salle (format-uid) : un spectateur arrivé avant lui
+  // ne peut pas prendre sa place
   const db = getFirestore();
   const ref = db.doc(`lives/${room}`);
+  const dash = room.indexOf('-');
+  const owner = dash > 0 ? room.slice(dash + 1) : uid;
   const live = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (snap.exists) return snap.data();
-    const created = { host: uid, stage: [], createdAt: FieldValue.serverTimestamp() };
+    const created = { host: owner, stage: [], createdAt: FieldValue.serverTimestamp() };
     tx.set(ref, created);
     return created;
   });
@@ -109,6 +112,26 @@ exports.postRemoved = onDocumentDeleted(on('posts/{postId}'), async (e) => {
   if (data?.uid && data.likes > 0) {
     await db.doc(`profiles/${data.uid}`).set({ likes: FieldValue.increment(-data.likes) }, { merge: true });
   }
+});
+
+// ── Lives en cours (onAir/{salle}) : nombre de spectateurs, ménage à la fin du live ──
+
+async function bumpViewers(room, n) {
+  try {
+    await getFirestore().doc(`onAir/${room}`).update({ viewers: FieldValue.increment(n) });
+  } catch {
+    // le live est déjà terminé
+  }
+}
+exports.viewerJoined = onDocumentCreated(on('onAir/{room}/viewers/{uid}'), (e) => bumpViewers(e.params.room, 1));
+exports.viewerLeft = onDocumentDeleted(on('onAir/{room}/viewers/{uid}'), (e) => bumpViewers(e.params.room, -1));
+
+/** Live terminé : on efface son chat et sa liste de spectateurs */
+// (seulement les sous-collections : si l'hôte relance aussitôt, son nouveau live reste en place)
+exports.liveEnded = onDocumentDeleted(on('onAir/{room}'), async (e) => {
+  const db = getFirestore();
+  await db.recursiveDelete(db.collection(`onAir/${e.params.room}/chat`));
+  await db.recursiveDelete(db.collection(`onAir/${e.params.room}/viewers`));
 });
 
 /** Compte supprimé : on efface aussi sa fiche publique */

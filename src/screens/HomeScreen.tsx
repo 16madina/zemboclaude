@@ -12,6 +12,41 @@ import { useFollowingFeed } from '../post/social';
 import { UserProfile, type ProfileTarget } from '../post/UserProfile';
 import { useSession } from '../lib/session';
 import { PostActionsHost } from '../post/PostActionsHost';
+import { useOnAirLives, type OnAirLive } from '../live/onair';
+import { LiveFeedCard } from '../live/LiveFeedCard';
+import { LiveViewer } from '../live/LiveViewer';
+
+/** Un live en cours présenté comme une carte du fil */
+const liveItem = (l: OnAirLive): Post => ({
+  id: `live-${l.room}`,
+  kind: 'live',
+  video: '',
+  uid: l.uid,
+  user: { handle: l.pseudo, name: l.name || l.pseudo, avatar: '' },
+  caption: l.title,
+  hashtags: [],
+  sound: 'LIVE',
+  likes: 0,
+  comments: 0,
+  saves: 0,
+  shares: 0,
+  viewers: l.viewers,
+  liveTitle: l.title,
+  onAir: l,
+});
+
+/** Glisse les lives dans le fil : un en 2e position, puis un toutes les 4 vidéos */
+function withLives(posts: Post[], lives: Post[]) {
+  if (!lives.length) return posts;
+  const out: Post[] = [];
+  let k = 0;
+  posts.forEach((p, i) => {
+    out.push(p);
+    if (k < lives.length && (i === 0 || (i > 0 && i % 4 === 0))) out.push(lives[k++]);
+  });
+  while (k < lives.length) out.push(lives[k++]);
+  return out;
+}
 
 
 // Page d'accueil : vidéos plein écran qui défilent verticalement
@@ -24,7 +59,31 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
   const [live, setLive] = useState<Post | null>(null);
 
   const real = useFeedPosts();
-  const { user } = useSession();
+  const { user, requireAuth } = useSession();
+  // les vrais lives en cours des autres membres
+  const onAir = useOnAirLives();
+  // La liste des lives du fil ne change que tout en haut : plus bas, un live qui commence ou se
+  // termine décalerait la vidéo qu'on regarde. Les chiffres (spectateurs, titre) restent à jour.
+  const others = useMemo(() => onAir.filter((l) => l.uid !== user?.uid), [onAir, user?.uid]);
+  const [shownRooms, setShownRooms] = useState<string[]>([]);
+  const atTop = active === 0;
+  useEffect(() => {
+    if (!atTop) return;
+    const next = others.map((l) => l.room);
+    setShownRooms((cur) => (cur.join() === next.join() ? cur : next));
+  }, [atTop, others]);
+  const lastKnown = useRef(new Map<string, OnAirLive>());
+  others.forEach((l) => lastKnown.current.set(l.room, l));
+  const lives = useMemo(
+    () => shownRooms.map((r) => lastKnown.current.get(r)).filter((l): l is OnAirLive => !!l).map(liveItem),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shownRooms, others],
+  );
+  const [watch, setWatch] = useState<OnAirLive | null>(null);
+  const openRealLive = useCallback(
+    (l: OnAirLive) => requireAuth('Connecte-toi pour regarder le live.', () => setWatch(l)),
+    [requireAuth],
+  );
   const followed = useFollowingFeed(user?.uid);
   const [profileOf, setProfileOf] = useState<ProfileTarget | null>(null);
   const [tagOf, setTagOf] = useState(false);
@@ -32,8 +91,13 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
   const listRef = useRef<FlatList<Post>>(null);
   // les vraies publications des membres passent en premier, puis les exemples (retirés avant le lancement)
   const data = useMemo(
-    () => (tab === 'foryou' ? [...real, ...FEED] : tab === 'explore' ? [...real, ...EXPLORE_FEED] : [...followed, ...FOLLOWING_FEED]),
-    [tab, real, followed],
+    () =>
+      tab === 'foryou'
+        ? withLives([...real, ...FEED], lives)
+        : tab === 'explore'
+          ? withLives([...real, ...EXPLORE_FEED], lives)
+          : [...followed, ...FOLLOWING_FEED],
+    [tab, real, followed, lives],
   );
 
   // après une publication : onglet Pour toi, tout en haut
@@ -43,7 +107,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
     setActive(0);
     requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
   }, [jumpTop]);
-  const playing = focused && !live && !profileOf && !tagOf;
+  const playing = focused && !live && !watch && !profileOf && !tagOf;
 
   const changeTab = (t: FeedTab) => {
     setTab(t);
@@ -69,7 +133,10 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
           key={tab}
           data={data}
           keyExtractor={(p) => `${tab}-${p.id}`}
-          renderItem={({ item, index }) => (
+          renderItem={({ item, index }) =>
+            item.onAir ? (
+              <LiveFeedCard live={item.onAir} height={height} isActive={playing && index === active} onOpen={openRealLive} />
+            ) : (
             <VideoPost
               post={item}
               height={height}
@@ -79,7 +146,8 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
               onOpenLive={openLive}
               onProfile={openProfile}
             />
-          )}
+            )
+          }
           pagingEnabled
           decelerationRate="fast"
           showsVerticalScrollIndicator={false}
@@ -92,11 +160,12 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
         />
       )}
 
-      <TopTabs value={tab} onChange={changeTab} onLive={() => setLive(firstLive)} />
+      <TopTabs value={tab} onChange={changeTab} onLive={() => (onAir.find((l) => l.uid !== user?.uid) ? openRealLive(onAir.find((l) => l.uid !== user?.uid)!) : setLive(firstLive))} />
 
       <CommentsSheet post={commentsFor} onClose={() => setCommentsFor(null)} />
       <ShareSheet post={shareFor} onClose={() => setShareFor(null)} />
       <LiveScreen post={live} onClose={() => setLive(null)} />
+      <LiveViewer live={watch} onClose={() => setWatch(null)} />
       <UserProfile target={profileOf} onClose={() => setProfileOf(null)} />
     </View>
     </PostActionsHost>

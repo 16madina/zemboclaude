@@ -90,6 +90,7 @@ export function useTableLive(config: TableConfig) {
       toggleMute,
       isMuted,
       say,
+      post,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [config, seats, queue, speaking, chat, viewers, occupied, freeSeats, isMuted],

@@ -25,6 +25,9 @@ import {
   useToast,
   type Gift,
 } from './LiveKit';
+import { useSession } from '../lib/session';
+import { useHostOnAir } from '../live/onair';
+import { HostCam } from '../live/HostCam';
 
 // Micro Ouvert : Deena anime, jusqu'à 4 invités montent sur scène (repris de zembolounge)
 const HOST = require('../../assets/talk/micro-host.jpg');
@@ -83,6 +86,15 @@ function MicroLive({ onClose }: { onClose: () => void }) {
   const input = useRef<React.ComponentRef<typeof TextInput>>(null);
 
   const [role, setRole] = useState<Role>('host');
+  // quand tu es l'hôte, le live apparaît sur l'accueil et les messages des spectateurs arrivent ici
+  const { profile, user } = useSession();
+  const onAir = useHostOnAir('openmic', {
+    active: !!user && role === 'host',
+    title: SUBJECT,
+    pseudo: profile?.pseudo,
+    name: [profile?.prenom, profile?.nom].filter(Boolean).join(' '),
+    onMessage: (m) => chat.push(m.pseudo, m.text),
+  });
   const [guests, setGuests] = useState<Guest[]>([
     { slot: 1, name: 'Malik', mic: true, hand: false, speaking: true },
     { slot: 2, name: 'Aïssatou', mic: false, hand: true, speaking: false },
@@ -223,6 +235,9 @@ function MicroLive({ onClose }: { onClose: () => void }) {
         </View>
       </View>
 
+      {/* ta caméra d'hôte, telle que la voient les spectateurs de l'accueil */}
+      <HostCam room={onAir.room} viewers={onAir.viewers} name={profile?.pseudo} style={{ top: T + 160, left: 14 }} controls="right" />
+
       {/* en-tête */}
       <View style={[styles.head, { top: T + 4 }]}>
         <LinearGradient colors={goldGradient} style={styles.z}>
@@ -330,7 +345,13 @@ function MicroLive({ onClose }: { onClose: () => void }) {
       {/* chat + saisie + barre du bas */}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.bottom} pointerEvents="box-none">
         <LiveChat msgs={chat.msgs} max={5} />
-        <ChatInput ref={input} onSend={(t) => chat.push('Deena', t, true)} />
+        <ChatInput
+          ref={input}
+          onSend={(t) => {
+            chat.push('Deena', t, true);
+            onAir.send(t);
+          }}
+        />
         {role !== 'viewer' && (
           <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom - 18, 6) }]}>
             <BarItem icon="log-out-outline" label={role === 'host' ? 'Quitter' : 'Quitter la scène'} onPress={() => (role === 'guest' ? leaveStage() : onClose())} />

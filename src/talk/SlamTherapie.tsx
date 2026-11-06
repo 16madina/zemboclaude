@@ -20,6 +20,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { AUTO, CHAT0, QUEUE0, REQUESTS0, SLAM_STAGE, STAGE0, TINTS, avatarOf, fmtDur, moodOf, type SlamMsg, type Slot } from './slamData';
 import { LyricsPanel } from './LyricsPanel';
+import { useSession } from '../lib/session';
+import { useHostOnAir } from '../live/onair';
+import { HostCam } from '../live/HostCam';
 import { melodyFile } from './melodies';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { MAGENTA, QueueDrawer, RequestSheet, SlamActionSheet, tap, type SlamRequest, type SlamSheetKind } from './SlamSheets';
@@ -226,11 +229,22 @@ function SlamLive({ onClose }: { onClose: () => void }) {
     }, 1800);
   };
 
+  // le live apparaît sur l'accueil ; les messages des spectateurs arrivent dans le chat
+  const { profile, user } = useSession();
+  const onAir = useHostOnAir('slam', {
+    active: !!user,
+    title: 'Des mots pour guérir',
+    pseudo: profile?.pseudo,
+    name: [profile?.prenom, profile?.nom].filter(Boolean).join(' '),
+    onMessage: (m) => push(m.pseudo, m.text),
+  });
+
   const send = () => {
     const t = draft.trim();
     if (!t) return;
     tap();
     push('Deena', t, true);
+    onAir.send(t);
     setDraft('');
   };
 
@@ -388,7 +402,9 @@ function SlamLive({ onClose }: { onClose: () => void }) {
         <TimerRing ratio={ratio} urgent={urgent} label={`${mm}:${ss}`} sub={`/ ${fmtDur(perf.duration)}`} />
       </View>
 
-      {/* vignette de l'hôte (caméra) */}
+      {/* vignette de l'hôte : ta vraie caméra quand tu es connecté·e */}
+      <HostCam room={onAir.room} viewers={onAir.viewers} name={profile?.pseudo} style={{ top: T + 182, right: 10 }} />
+      {!onAir.room && (
       <View style={[styles.pip, { top: T + 196 }]} pointerEvents="none">
         <Image source={avatarOf('Deena', 160)} style={styles.pipImg} />
         <View style={styles.cam}>
@@ -398,6 +414,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
         <Text style={styles.pipName}>👑 Deena</Text>
         <Text style={styles.pipRole}>Hôte</Text>
       </View>
+      )}
 
       {/* Mode Paroles : le texte de la personne au mic, à l'écran, façon karaoké */}
       {!thanks && !nextUp && (
