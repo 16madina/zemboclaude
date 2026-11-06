@@ -261,7 +261,10 @@ function Game({ onClose }: { onClose: () => void }) {
     usedRef.current = new Set();
     totalsRef.current = {};
     setTotals({});
-    startLevel(0, players.map((p) => p.id));
+    startLevel(
+      0,
+      players.map((p) => p.id),
+    );
   };
 
   // présentation du joueur, puis son tour commence
@@ -317,9 +320,7 @@ function Game({ onClose }: { onClose: () => void }) {
         sfx('bad');
         toast.show(err);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-        Animated.sequence(
-          [10, -10, 7, -7, 0].map((x) => Animated.timing(shake, { toValue: x, duration: 55, useNativeDriver: true })),
-        ).start();
+        Animated.sequence([10, -10, 7, -7, 0].map((x) => Animated.timing(shake, { toValue: x, duration: 55, useNativeDriver: true }))).start();
         return;
       }
     }
@@ -332,9 +333,12 @@ function Game({ onClose }: { onClose: () => void }) {
     setRevealRow(next.length - 1);
     const token = tokenRef.current;
     marks.forEach((m, i) =>
-      setTimeout(() => {
-        if (tokenRef.current === token) sfx(m);
-      }, i * FLIP + 150),
+      setTimeout(
+        () => {
+          if (tokenRef.current === token) sfx(m);
+        },
+        i * FLIP + 150,
+      ),
     );
     setTimeout(
       () => {
@@ -357,7 +361,6 @@ function Game({ onClose }: { onClose: () => void }) {
     const token = tokenRef.current;
     const secret = secretsRef.current[p.id];
     const L = secret.length;
-    const g = givenCount(L);
     setTimeout(
       () => {
         if (tokenRef.current !== token || phaseRef.current !== 'turn') return;
@@ -367,9 +370,9 @@ function Game({ onClose }: { onClose: () => void }) {
         const typeNext = () => {
           if (tokenRef.current !== token || phaseRef.current !== 'turn') return;
           k += 1;
-          setTyping(guess.slice(g, g + k));
+          setTyping(guess.slice(0, k));
           sfx('key');
-          if (g + k < L) setTimeout(typeNext, rand(150, 260));
+          if (k < L) setTimeout(typeNext, rand(150, 260));
           else setTimeout(() => submit(guess, false), 420);
         };
         typeNext();
@@ -476,7 +479,9 @@ function Game({ onClose }: { onClose: () => void }) {
           title: `Niveau ${len} lettres terminé`,
           qualified: F,
           eliminated: lost,
-          note: last ? 'Ceux qui ont trouvé les 9 lettres se départagent au score.' : `${names(lost)} ${lost.length > 1 ? 'descendent' : 'descend'} parmi les spectateurs.`,
+          note: last
+            ? 'Ceux qui ont trouvé les 9 lettres se départagent au score.'
+            : `${names(lost)} ${lost.length > 1 ? 'descendent' : 'descend'} parmi les spectateurs.`,
         },
         () => (last ? finalCompare(F) : startLevel(levelIdx + 1, F)),
       );
@@ -484,7 +489,12 @@ function Game({ onClose }: { onClose: () => void }) {
     // personne n'a trouvé
     if (retry < 2) {
       return showLevelEnd(
-        { title: 'Personne n’a trouvé', qualified: A, eliminated: [], note: `On rejoue le niveau ${len} lettres avec de nouveaux mots (reprise ${retry + 1}/2).` },
+        {
+          title: 'Personne n’a trouvé',
+          qualified: A,
+          eliminated: [],
+          note: `On rejoue le niveau ${len} lettres avec de nouveaux mots (reprise ${retry + 1}/2).`,
+        },
         () => startLevel(levelIdx, A, retry + 1),
       );
     }
@@ -605,10 +615,11 @@ function Game({ onClose }: { onClose: () => void }) {
   const keyMarks = useMemo(() => {
     const m: Record<string, Mark> = {};
     const rank = { ok: 3, near: 2, no: 1 };
-    for (const r of rows) r.marks.forEach((x, i) => {
-      const c = r.guess[i];
-      if (!m[c] || rank[x] > rank[m[c]]) m[c] = x;
-    });
+    for (const r of rows)
+      r.marks.forEach((x, i) => {
+        const c = r.guess[i];
+        if (!m[c] || rank[x] > rank[m[c]]) m[c] = x;
+      });
     return m;
   }, [rows]);
   const press = (k: string) => {
@@ -618,14 +629,14 @@ function Game({ onClose }: { onClose: () => void }) {
       return setTyping(typedRef.current.slice(0, -1));
     }
     if (k === 'OK') {
-      const word = secretNow.slice(0, given) + typedRef.current;
+      const word = typedRef.current;
       if (word.length < len) {
         sfx('bad');
         return toast.show(`Il faut ${len} lettres`);
       }
       return submit(word, true);
     }
-    if (given + typedRef.current.length >= len) return;
+    if (typedRef.current.length >= len) return;
     sfx('key');
     setTyping(typedRef.current + k);
   };
@@ -647,7 +658,8 @@ function Game({ onClose }: { onClose: () => void }) {
   // ── mise en page ──
   const boardInner = width - 24 - 4 - 20;
   const gridW = boardInner;
-  const cell = Math.min(38, Math.floor((gridW - (len - 1) * 5) / len));
+  const tileW = Math.min(78, Math.floor((gridW - (len - 1) * 5) / len));
+  const tileH = Math.min(36, Math.max(30, tileW));
   const camW = (width - 24 - 3 * 8) / 4;
   const chatRows = Math.max(2, Math.floor((chatH - 6) / 27));
   const timeTotal = TURN_TIME[len];
@@ -661,7 +673,8 @@ function Game({ onClose }: { onClose: () => void }) {
     const r = results[p.id];
     if (phase === 'levelEnd' && summary?.qualified.includes(p.id)) return { text: 'Qualifié', icon: 'checkmark-circle', color: GREEN };
     if (r) return r.found ? { text: 'Trouvé', icon: 'checkmark-circle', color: GREEN } : { text: 'Échec', icon: 'close-circle', color: RED };
-    if (p.id === activeId && (phase === 'turn' || phase === 'intro')) return { text: p.me ? 'À toi !' : 'En jeu', icon: 'ellipsis-horizontal-circle', color: GOLD };
+    if (p.id === activeId && (phase === 'turn' || phase === 'intro'))
+      return { text: p.me ? 'À toi !' : 'En jeu', icon: 'ellipsis-horizontal-circle', color: GOLD };
     if (order.includes(p.id)) return { text: 'À venir', icon: 'ellipsis-horizontal-circle', color: '#C9B8FF' };
     return { text: 'En attente', icon: 'ellipsis-horizontal-circle', color: '#C9B8FF' };
   };
@@ -679,10 +692,9 @@ function Game({ onClose }: { onClose: () => void }) {
     const current = r === rows.length && (phase === 'turn' || phase === 'intro') && !!secretNow;
     return Array.from({ length: len }).map((__, i) => {
       if (!current) return { ch: '', mark: null as Mark | null, hint: false, given: false };
-      if (i < given) return { ch: secretNow[i], mark: null, hint: false, given: true };
-      const t = typed[i - given];
+      const t = typed[i];
       if (t) return { ch: t, mark: null, hint: false, given: false };
-      return { ch: known[i] ?? '', mark: null, hint: !!known[i], given: false };
+      return { ch: known[i] ?? '', mark: null, hint: !!known[i], given: i < given };
     });
   });
 
@@ -755,13 +767,14 @@ function Game({ onClose }: { onClose: () => void }) {
                   {cells.map((c, i) => (
                     <Tile
                       key={i}
-                      size={cell}
+                      w={tileW}
+                      h={tileH}
                       ch={c.ch}
                       mark={c.mark}
                       delay={revealRow === r ? i * FLIP : undefined}
                       hint={c.hint}
                       given={c.given}
-                      cursor={isCurrent && myTurn && i === given + typed.length}
+                      cursor={isCurrent && myTurn && i === typed.length}
                     />
                   ))}
                 </Animated.View>
@@ -849,27 +862,41 @@ function Game({ onClose }: { onClose: () => void }) {
 
       {/* ── clavier quand c'est ton tour, sinon progression et commentaires ── */}
       {myTurn ? (
-        <View style={styles.keyboard}>
-          <Text style={styles.kbInfo}>
-            Essai {rows.length + 1}/{MAX_TRIES} · commence par {secretNow.slice(0, given)} · tape la suite
-          </Text>
-          {KEYS.map((row, r) => (
-            <View key={r} style={styles.kbRow}>
-              {r === 2 && <Key label="⌫" wide onPress={() => press('⌫')} />}
-              {row.split('').map((k) => (
-                <Key key={k} label={k} mark={keyMarks[k]} onPress={() => press(k)} />
+        <>
+          <View style={styles.keyboard}>
+            <Text style={styles.kbInfo}>
+              Essai {rows.length + 1}/{MAX_TRIES} · le mot commence par {secretNow.slice(0, given)}
+            </Text>
+            {KEYS.map((row, r) => (
+              <View key={r} style={styles.kbRow}>
+                {r === 2 && <Key label="⌫" wide onPress={() => press('⌫')} />}
+                {row.split('').map((k) => (
+                  <Key key={k} label={k} mark={keyMarks[k]} onPress={() => press(k)} />
+                ))}
+                {r === 2 && <Key label="Valider" ok onPress={() => press('OK')} />}
+              </View>
+            ))}
+          </View>
+          <View style={styles.chatWrap} onLayout={(e) => setChatH(e.nativeEvent.layout.height)}>
+            <View style={styles.chat}>
+              {chat.msgs.slice(-chatRows).map((m) => (
+                <View key={m.id} style={styles.msg}>
+                  <Image source={faceOf(m.user, 60)} style={styles.msgAv} />
+                  <Text style={styles.msgName} numberOfLines={1}>
+                    {m.user}
+                  </Text>
+                  <Text style={styles.msgText} numberOfLines={1}>
+                    {m.text}
+                  </Text>
+                </View>
               ))}
-              {r === 2 && <Key label="Valider" ok onPress={() => press('OK')} />}
             </View>
-          ))}
-        </View>
+          </View>
+        </>
       ) : (
         <>
           <Progress levelIdx={levelIdx} started={phase !== 'lobby'} />
-          <View
-            style={styles.chatWrap}
-            onLayout={(e) => setChatH(e.nativeEvent.layout.height)}
-          >
+          <View style={styles.chatWrap} onLayout={(e) => setChatH(e.nativeEvent.layout.height)}>
             <View style={styles.chat}>
               {chat.msgs.slice(-chatRows).map((m) => {
                 const mention = m.text.match(/^@\S+/)?.[0];
@@ -1012,10 +1039,14 @@ function Game({ onClose }: { onClose: () => void }) {
             setTimeout(() => setRulesOpen(true), 250);
           }}
         />
-        <MenuRow icon="people-outline" text="Liste d’attente" onPress={() => {
-          setMenuOpen(false);
-          setTimeout(() => setDrawer(true), 250);
-        }} />
+        <MenuRow
+          icon="people-outline"
+          text="Liste d’attente"
+          onPress={() => {
+            setMenuOpen(false);
+            setTimeout(() => setDrawer(true), 250);
+          }}
+        />
         <MenuRow icon="close-circle-outline" text="Terminer le live" danger onPress={onClose} />
       </Sheet>
 
@@ -1058,7 +1089,8 @@ function Tile({
   ch,
   mark,
   delay,
-  size,
+  w,
+  h,
   hint,
   given,
   cursor,
@@ -1066,7 +1098,8 @@ function Tile({
   ch: string;
   mark: Mark | null;
   delay?: number;
-  size: number;
+  w: number;
+  h: number;
   hint: boolean;
   given: boolean;
   cursor: boolean;
@@ -1103,7 +1136,13 @@ function Tile({
     <Animated.View
       style={[
         styles.tile,
-        { width: size, height: size, borderRadius: Math.round(size * 0.18), backgroundColor: bg, transform: [{ perspective: 500 }, { rotateX }, { scale: pop }] },
+        {
+          width: w,
+          height: h,
+          borderRadius: Math.round(Math.min(w, h) * 0.2),
+          backgroundColor: bg,
+          transform: [{ perspective: 500 }, { rotateX }, { scale: pop }],
+        },
         shown && styles.tileDone,
         cursor && styles.tileCursor,
         given && styles.tileGiven,
@@ -1113,9 +1152,8 @@ function Tile({
         <Text
           style={[
             styles.tileText,
-            { fontSize: Math.round(size * 0.56) },
-            hint && { color: 'rgba(255,255,255,0.28)' },
-            given && !shown && { color: GOLD },
+            { fontSize: Math.round(Math.min(w * 0.6, h * 0.62)) },
+            hint && { color: given ? 'rgba(243,210,122,0.55)' : 'rgba(255,255,255,0.28)' },
             shown === 'near' && { color: '#2A1A00' },
           ]}
         >
@@ -1138,7 +1176,9 @@ function Legend({ color, text }: { color: string; text: string }) {
 function Key({ label, mark, wide, ok, onPress }: { label: string; mark?: Mark; wide?: boolean; ok?: boolean; onPress: () => void }) {
   const bg = ok ? undefined : mark === 'ok' ? GREEN : mark === 'near' ? YELLOW : mark === 'no' ? '#2A2836' : 'rgba(255,255,255,0.12)';
   const inner = (
-    <Text style={[styles.keyText, ok && { color: INK, fontSize: 14 }, mark === 'near' && { color: '#2A1A00' }, mark === 'no' && { color: 'rgba(255,255,255,0.4)' }]}>
+    <Text
+      style={[styles.keyText, ok && { color: INK, fontSize: 14 }, mark === 'near' && { color: '#2A1A00' }, mark === 'no' && { color: 'rgba(255,255,255,0.4)' }]}
+    >
       {label}
     </Text>
   );
@@ -1181,7 +1221,11 @@ function Progress({ levelIdx, started }: { levelIdx: number; started: boolean })
             <View key={L} style={{ flex: 1, alignItems: 'center' }}>
               {i > 0 && <View style={[styles.progLine, (done || cur) && { backgroundColor: done ? GREEN : GOLD2 }]} />}
               <View style={[styles.progDot, done && { backgroundColor: GREEN, borderColor: GREEN }, cur && styles.progDotCur]}>
-                <Ionicons name={done ? 'checkmark' : cur ? 'chevron-down' : 'lock-closed'} size={done ? 14 : 12} color={done ? '#fff' : cur ? GOLD : 'rgba(255,255,255,0.6)'} />
+                <Ionicons
+                  name={done ? 'checkmark' : cur ? 'chevron-down' : 'lock-closed'}
+                  size={done ? 14 : 12}
+                  color={done ? '#fff' : cur ? GOLD : 'rgba(255,255,255,0.6)'}
+                />
               </View>
               <Text style={[styles.progText, cur && { color: GOLD, fontWeight: '900' }]}>{L} lettres</Text>
             </View>
@@ -1273,7 +1317,19 @@ function Lobby({
   );
 }
 
-function LevelEnd({ s, players, results, totals, top }: { s: Summary; players: P[]; results: Record<string, Res>; totals: Record<string, number>; top: number }) {
+function LevelEnd({
+  s,
+  players,
+  results,
+  totals,
+  top,
+}: {
+  s: Summary;
+  players: P[];
+  results: Record<string, Res>;
+  totals: Record<string, number>;
+  top: number;
+}) {
   const shown = players.filter((p) => s.qualified.includes(p.id) || s.eliminated.includes(p.id));
   return (
     <Cover top={top}>
@@ -1288,7 +1344,11 @@ function LevelEnd({ s, players, results, totals, top }: { s: Summary; players: P
             <View style={{ flex: 1 }}>
               <Text style={styles.resName}>{nameOf(p)}</Text>
               <Text style={styles.resSub}>
-                {r ? (r.found ? `Trouvé en ${r.tries} essai${r.tries > 1 ? 's' : ''} · +${r.points} pts` : `Pas trouvé · ${r.greens} lettre${r.greens > 1 ? 's' : ''} bien placée${r.greens > 1 ? 's' : ''}`) : '—'}
+                {r
+                  ? r.found
+                    ? `Trouvé en ${r.tries} essai${r.tries > 1 ? 's' : ''} · +${r.points} pts`
+                    : `Pas trouvé · ${r.greens} lettre${r.greens > 1 ? 's' : ''} bien placée${r.greens > 1 ? 's' : ''}`
+                  : '—'}
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
@@ -1330,9 +1390,7 @@ function ChampionCard({
     <Cover top={top}>
       <Text style={{ fontSize: 46, textAlign: 'center' }}>👑</Text>
       <Text style={styles.cardTitle}>{champ.me ? 'Tu es champion !' : `${champ.name} est champion !`}</Text>
-      <Text style={styles.cardSub}>
-        {streak > 1 ? `${nameOf(champ)} — Champion, ${streak} victoires consécutives. ` : ''}Le champion reste sur scène.
-      </Text>
+      <Text style={styles.cardSub}>{streak > 1 ? `${nameOf(champ)} — Champion, ${streak} victoires consécutives. ` : ''}Le champion reste sur scène.</Text>
       {ranking.map((p, i) => (
         <View key={p.id} style={[styles.resRow, p.id === champ.id && styles.resOk]}>
           <Text style={styles.rankPos}>{i + 1}</Text>
@@ -1343,7 +1401,9 @@ function ChampionCard({
       ))}
       <View style={styles.hostBox}>
         <Text style={styles.hostTitle}>
-          {ready ? '3 joueurs prêts à monter' : `${3 - accepted.length} place${3 - accepted.length > 1 ? 's' : ''} disponible${3 - accepted.length > 1 ? 's' : ''}`}
+          {ready
+            ? '3 joueurs prêts à monter'
+            : `${3 - accepted.length} place${3 - accepted.length > 1 ? 's' : ''} disponible${3 - accepted.length > 1 ? 's' : ''}`}
         </Text>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
           {[0, 1, 2].map((i) => {
@@ -1450,7 +1510,10 @@ function QueueDrawer({
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 50 }]}>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} onPress={onClose} />
-      <Animated.View {...pan.panHandlers} style={[styles.drawer, { width: W, paddingTop: top + 8, paddingBottom: insets.bottom + 10, transform: [{ translateX: x }] }]}>
+      <Animated.View
+        {...pan.panHandlers}
+        style={[styles.drawer, { width: W, paddingTop: top + 8, paddingBottom: insets.bottom + 10, transform: [{ translateX: x }] }]}
+      >
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 }}>
           <View style={{ flex: 1 }}>
             <Text style={styles.drawerTitle}>PROCHAINS JOUEURS</Text>
@@ -1625,7 +1688,15 @@ const styles = StyleSheet.create({
   },
   levelSmall: { color: '#fff', fontSize: 12, fontWeight: '800' },
   levelBig: { color: GOLD, fontSize: 15, fontWeight: '900' },
-  legend: { borderRadius: 14, borderWidth: 1, borderColor: 'rgba(233,185,73,0.5)', paddingVertical: 8, paddingHorizontal: 6, gap: 9, backgroundColor: 'rgba(0,0,0,0.3)' },
+  legend: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(233,185,73,0.5)',
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    gap: 9,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 10, height: 10, borderRadius: 3 },
   legendText: { color: 'rgba(255,255,255,0.75)', fontSize: 10.5, fontWeight: '700' },
@@ -1674,8 +1745,28 @@ const styles = StyleSheet.create({
   activeGlow: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16, borderWidth: 3, borderColor: GOLD, ...glow },
   crown: { position: 'absolute', top: 3, left: 5, flexDirection: 'row', alignItems: 'center' },
   crownN: { color: GOLD, fontSize: 12, fontWeight: '900', marginLeft: 1 },
-  mic: { position: 'absolute', top: 5, right: 5, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
-  myMicBtn: { position: 'absolute', top: 30, right: 5, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  mic: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  myMicBtn: {
+    position: 'absolute',
+    top: 30,
+    right: 5,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   camBottom: { position: 'absolute', left: 0, right: 0, bottom: 6, alignItems: 'center' },
   camName: { color: '#fff', fontSize: 14, fontWeight: '900', maxWidth: '92%' },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1, maxWidth: '94%' },
@@ -1716,10 +1807,10 @@ const styles = StyleSheet.create({
   msgName: { flexShrink: 1, color: '#C9B8FF', fontSize: 13.5, fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 3 },
   msgText: { flex: 1, color: '#fff', fontSize: 13.5, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.85)', textShadowRadius: 3 },
 
-  keyboard: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 8, paddingBottom: 6, gap: 6 },
+  keyboard: { paddingHorizontal: 8, marginTop: 10, gap: 6 },
   kbInfo: { color: GOLD, fontSize: 12, fontWeight: '800', textAlign: 'center', marginBottom: 2 },
   kbRow: { flexDirection: 'row', gap: 5 },
-  key: { height: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  key: { height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   keyText: { color: '#fff', fontSize: 17, fontWeight: '900' },
 
   bottomBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 2 },
@@ -1764,7 +1855,18 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     backgroundColor: '#15114A',
   },
-  lobbyCamText: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingVertical: 5, textAlign: 'center', color: '#fff', fontSize: 10.5, fontWeight: '800', backgroundColor: 'rgba(0,0,0,0.55)' },
+  lobbyCamText: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingVertical: 5,
+    textAlign: 'center',
+    color: '#fff',
+    fontSize: 10.5,
+    fontWeight: '800',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
   sectionTitle: { color: GOLD, fontSize: 14, fontWeight: '900', marginBottom: 8 },
   upAv: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: PURPLE },
   upEmpty: { borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'rgba(255,255,255,0.05)' },
@@ -1804,7 +1906,16 @@ const styles = StyleSheet.create({
   toolText: { color: INK, fontSize: 12.5, fontWeight: '900' },
   drawerNote: { color: 'rgba(255,255,255,0.65)', fontSize: 11.5, paddingHorizontal: 16, marginTop: 8 },
   drawerEmpty: { color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 20 },
-  qRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 8, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)', marginTop: 8 },
+  qRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginTop: 8,
+  },
   qPos: { width: 18, textAlign: 'center', color: GOLD, fontSize: 13, fontWeight: '900' },
   qAv: { width: 36, height: 36, borderRadius: 18 },
   qName: { color: '#fff', fontSize: 14, fontWeight: '900' },
