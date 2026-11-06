@@ -215,23 +215,23 @@ const Card = memo(function Card({
 });
 
 const CONNECT_ICON = require('../../assets/world/connect.png');
+const PASS_ICON = require('../../assets/world/pass.png');
+const HELLO_ICON = require('../../assets/world/hello.png');
 
 function Actions({ onPass, onHello, onConnect }: { onPass: () => void; onHello: () => void; onConnect: () => void }) {
   return (
     <View style={styles.actions}>
       <Action label="Passer" hint="Au prochain profil" onPress={onPass}>
-        <View style={[styles.action, styles.actionDim]}>
-          <Ionicons name="arrow-forward" size={24} color={colors.text} />
-        </View>
+        <Image source={PASS_ICON} style={styles.coin} contentFit="contain" />
       </Action>
       <Action label="Dire Hello" hint="Lance la conversation" onPress={onHello} gold>
-        <LinearGradient colors={goldGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.action, styles.actionBig]}>
-          <Text style={{ fontSize: 28 }}>👋</Text>
-        </LinearGradient>
+        <View style={styles.coinGlow}>
+          <Image source={HELLO_ICON} style={styles.coinBig} contentFit="contain" />
+        </View>
       </Action>
       <Action label="Connecter" hint="Si le feeling est là" onPress={onConnect}>
         <View style={[styles.action, styles.actionGold]}>
-          <Image source={CONNECT_ICON} style={{ width: 46, height: 46 }} contentFit="contain" />
+          <Image source={CONNECT_ICON} style={{ width: 50, height: 50 }} contentFit="contain" />
         </View>
       </Action>
     </View>
@@ -516,9 +516,10 @@ const styles = StyleSheet.create({
   moreText: { color: colors.gold, fontSize: 13, fontWeight: '800' },
   actions: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-start', marginTop: 14 },
   actionWrap: { alignItems: 'center', width: 110 },
-  action: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
-  actionBig: { width: 70, height: 70, borderRadius: 35, shadowColor: colors.gold, shadowOpacity: 0.6, shadowRadius: 16, shadowOffset: { width: 0, height: 0 } },
-  actionDim: { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  action: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  coin: { width: 64, height: 64 },
+  coinBig: { width: 80, height: 80 },
+  coinGlow: { borderRadius: 40, shadowColor: colors.gold, shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } },
   actionGold: { backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 1.5, borderColor: colors.gold },
   actionLabel: { color: colors.text, fontSize: 12.5, fontWeight: '800', marginTop: 6 },
   actionHint: { color: colors.textFaint, fontSize: 10.5, marginTop: 1 },
