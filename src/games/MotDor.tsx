@@ -27,10 +27,12 @@ import { useSession } from '../lib/session';
 import { auth } from '../lib/firebase';
 import { CameraFeed, CameraPreview, mediaAvailable, useLiveMedia } from '../live/media';
 import { Backdrop, RoundGold } from './LettresDor';
+import { PlayerSheet } from './PlayerSheet';
+import { BOTS, LEVEL_INFO } from './bots';
 import {
   LEVELS,
   MAX_TRIES,
-  TURN_TIME,
+  LEVEL_LABEL,
   botFindChance,
   botGuess,
   checkGuess,
@@ -38,7 +40,9 @@ import {
   knownLetters,
   markGuess,
   pickWords,
+  turnTime,
   wordPoints,
+  type Level,
   type Mark,
   type Row,
 } from './motdorEngine';
@@ -65,7 +69,8 @@ const GREY = '#5C5A6B';
 const RED = '#FF5A6E';
 const FLIP = 350; // délai entre deux cases qui se retournent (ms), comme une note toutes les 0,35 s
 
-type P = { id: string; name: string; photo: number | string; me?: boolean; skill: number };
+type P = { id: string; name: string; photo: number | string; me?: boolean; skill: number; about?: string };
+type Mode = 'live' | 'training';
 type Res = { found: boolean; tries: number; time: number; greens: number; points: number };
 type Phase = 'lobby' | 'intro' | 'turn' | 'turnEnd' | 'levelEnd' | 'champion';
 type Summary = { qualified: string[]; eliminated: string[]; note: string; title: string };
@@ -78,6 +83,12 @@ const person = (id: string, name: string, skill: number, face = name): P => {
 };
 const viewer = (name: string, k: number): P => ({ id: `q${k}-${name}`, name, photo: faceOf(name, 300), skill: 0.82 + (k % 4) * 0.04 });
 const nameOf = (p?: P) => (p ? (p.me ? 'Toi' : p.name) : '');
+/** Entraînement : 3 adversaires tirés parmi les 4 du niveau */
+const pickTrio = (level: Level): P[] =>
+  [...BOTS[level]]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3)
+    .map((b) => ({ id: b.id, name: b.name, photo: b.photo, skill: b.skill, about: b.about }));
 const QUEUE0 = ['Fatou', 'Idriss', 'Nadia', 'Malik', 'Mariam', 'Yann', 'Chloé', 'Samir'];
 const LATER = ['Bintou', 'Jordan', 'Leïla', 'Djamal', 'Noura', 'Karim', 'Emma', 'Alex', 'Sophie', 'Kader'];
 
@@ -163,6 +174,13 @@ function Game({ onClose }: { onClose: () => void }) {
   const sfx = useSfx(soundOn);
 
   // ── la scène ──
+  const [mode, setMode] = useState<Mode>('live');
+  const [level, setLevel] = useState<Level>('difficile');
+  const levelRef = useRef<Level>('difficile');
+  levelRef.current = level;
+  const [trio, setTrio] = useState<P[]>(() => pickTrio('difficile'));
+  const [focus, setFocus] = useState<P | null>(null); // fiche d'un joueur (cadeau, applaudir, profil)
+  const training = mode === 'training';
   const [hostPlays, setHostPlays] = useState(true);
   const [stage, setStage] = useState<P[]>([]);
   const [out, setOut] = useState<string[]>([]); // éliminés de la partie en cours (vignette grisée)
@@ -229,7 +247,7 @@ function Game({ onClose }: { onClose: () => void }) {
   // ── caméras (LiveKit) : seul le joueur actif a le micro ouvert pendant son tour ──
   const [camReady, setCamReady] = useState(false);
   const [myMic, setMyMic] = useState(true);
-  const liveRoom = mediaAvailable && phase !== 'lobby' && auth.currentUser ? `motdor-${auth.currentUser.uid}` : null;
+  const liveRoom = mediaAvailable && !training && phase !== 'lobby' && auth.currentUser ? `motdor-${auth.currentUser.uid}` : null;
   const media = useLiveMedia(liveRoom, {
     publish: camReady && meOnStage,
     mic: myMic && phase === 'turn' && activeId === 'me', // fermé pour tous les autres, impossible à rallumer
@@ -239,7 +257,7 @@ function Game({ onClose }: { onClose: () => void }) {
   // ── la partie ──
   const startLevel = (idx: number, ids: string[], retryN = 0, tb = false) => {
     const L = LEVELS[idx];
-    const words = pickWords(L, ids.length, usedRef.current);
+    const words = pickWords(L, ids.length, usedRef.current, levelRef.current);
     words.forEach((w) => usedRef.current.add(w));
     secretsRef.current = Object.fromEntries(ids.map((id, i) => [id, words[i]]));
     resultsRef.current = {};
@@ -281,7 +299,7 @@ function Game({ onClose }: { onClose: () => void }) {
       busyRef.current = false;
       canFindRef.current = !p || p.me ? true : Math.random() < botFindChance(p.skill, LEVELS[levelIdx]);
       turnStartRef.current = Date.now();
-      setTimeLeft(TURN_TIME[LEVELS[levelIdx]]);
+      setTimeLeft(turnTime(LEVELS[levelIdx], levelRef.current));
       tokenRef.current += 1;
       go('turn');
       sfx('turn');
@@ -297,7 +315,7 @@ function Game({ onClose }: { onClose: () => void }) {
     if (phase !== 'turn') return;
     let lastSec = -1;
     const t = setInterval(() => {
-      const left = TURN_TIME[LEVELS[levelIdx]] - (Date.now() - turnStartRef.current) / 1000;
+      const left = turnTime(LEVELS[levelIdx], levelRef.current) - (Date.now() - turnStartRef.current) / 1000;
       setTimeLeft(left);
       const sec = Math.ceil(left);
       if (sec <= 10 && sec > 0 && sec !== lastSec) sfx('tick');
@@ -308,7 +326,7 @@ function Game({ onClose }: { onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, levelIdx]);
 
-  const timeIsUp = () => TURN_TIME[LEVELS[levelIdx]] - (Date.now() - turnStartRef.current) / 1000 <= 0;
+  const timeIsUp = () => turnTime(LEVELS[levelIdx], levelRef.current) - (Date.now() - turnStartRef.current) / 1000 <= 0;
 
   /** Une proposition : vérifiée, colorée case par case, puis la suite */
   const submit = (guess: string, byMe: boolean) => {
@@ -321,7 +339,10 @@ function Game({ onClose }: { onClose: () => void }) {
         sfx('bad');
         toast.show(err);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-        Animated.sequence([10, -10, 7, -7, 0].map((x) => Animated.timing(shake, { toValue: x, duration: 55, useNativeDriver: true }))).start();
+        Animated.sequence([10, -10, 7, -7, 0].map((x) => Animated.timing(shake, { toValue: x, duration: 55, useNativeDriver: true }))).start(() => {
+          // la ligne s'efface toute seule : pas besoin d'appuyer sur ⌫
+          if (phaseRef.current === 'turn') setTyping('');
+        });
         return;
       }
     }
@@ -389,9 +410,9 @@ function Game({ onClose }: { onClose: () => void }) {
     const id = order[turnPos];
     const L = LEVELS[levelIdx];
     const tries = rowsRef.current.length;
-    const time = Math.min(TURN_TIME[L], (Date.now() - turnStartRef.current) / 1000);
+    const time = Math.min(turnTime(L, levelRef.current), (Date.now() - turnStartRef.current) / 1000);
     const greens = Math.max(0, ...rowsRef.current.map((r) => r.marks.filter((m) => m === 'ok').length));
-    const points = found ? wordPoints(L, tries, 1 - time / TURN_TIME[L]) : 0;
+    const points = found ? wordPoints(L, tries, 1 - time / turnTime(L, levelRef.current)) : 0;
     resultsRef.current = { ...resultsRef.current, [id]: { found, tries, time, greens, points } };
     setResults(resultsRef.current);
     totalsRef.current = { ...totalsRef.current, [id]: (totalsRef.current[id] ?? 0) + points };
@@ -534,7 +555,7 @@ function Game({ onClose }: { onClose: () => void }) {
 
   // ── liste d'attente ──
   useEffect(() => {
-    if (!requestsOpen) return;
+    if (!requestsOpen || training) return;
     const t = setInterval(() => {
       setQueue((q) => {
         if (q.length >= 14) return q;
@@ -546,7 +567,7 @@ function Game({ onClose }: { onClose: () => void }) {
     }, 15000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestsOpen]);
+  }, [requestsOpen, training]);
 
   const invite = (ids: string[]) => {
     if (!ids.length) return;
@@ -654,7 +675,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const tileH = Math.min(36, Math.max(30, tileW));
   const camW = (width - 24 - 3 * 8) / 4;
   const chatRows = Math.max(myTurn ? 0 : 2, Math.floor((chatH - 6) / 27)); // pendant ton tour, pas de ligne coupée sous le clavier
-  const timeTotal = TURN_TIME[len];
+  const timeTotal = turnTime(len, level);
   const clock = phase === 'turn' ? timeLeft : phase === 'intro' ? timeTotal : phase === 'turnEnd' ? timeLeft : timeTotal;
   const champStreak = champion ? (streaks[champion] ?? 1) : 0;
 
@@ -704,19 +725,29 @@ function Game({ onClose }: { onClose: () => void }) {
             Mot d’Or <Text style={styles.titleZembo}>ZEMBO</Text>
           </Text>
           <View style={styles.liveRow}>
-            <View style={styles.liveBadge}>
-              <Text style={styles.liveText}>LIVE</Text>
-            </View>
-            <View style={styles.viewers}>
-              <Ionicons name="eye-outline" size={12} color="#fff" />
-              <Text style={styles.viewersText}>986</Text>
-            </View>
+            {training ? (
+              <View style={styles.trainBadge}>
+                <Text style={styles.trainText}>ENTRAÎNEMENT · {LEVEL_LABEL[level].toUpperCase()}</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.liveBadge}>
+                  <Text style={styles.liveText}>LIVE</Text>
+                </View>
+                <View style={styles.viewers}>
+                  <Ionicons name="eye-outline" size={12} color="#fff" />
+                  <Text style={styles.viewersText}>986</Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
-        <Pressable onPress={() => setDrawer(true)} hitSlop={6} style={styles.queueBtn}>
-          <Ionicons name="people" size={15} color={GOLD} />
-          <Text style={styles.queueBtnText}>Jouer</Text>
-        </Pressable>
+        {!training && (
+          <Pressable onPress={() => setDrawer(true)} hitSlop={6} style={styles.queueBtn}>
+            <Ionicons name="people" size={15} color={GOLD} />
+            <Text style={styles.queueBtnText}>Jouer</Text>
+          </Pressable>
+        )}
         <Pressable onPress={() => setMenuOpen(true)} hitSlop={8} style={[styles.roundBtn, { marginLeft: 8 }]}>
           <Ionicons name="ellipsis-horizontal" size={17} color="#fff" />
         </Pressable>
@@ -802,7 +833,7 @@ function Game({ onClose }: { onClose: () => void }) {
 
       {/* ── les 4 joueurs ── */}
       <View style={styles.players}>
-        {(stage.length ? stage : lobbyPlayers(hostPlays)).map((p) => {
+        {(stage.length ? stage : training ? [ME, ...trio] : lobbyPlayers(hostPlays)).map((p) => {
           const st = statusOf(p);
           const isActive = p.id === activeId && (phase === 'turn' || phase === 'intro');
           const isOut = out.includes(p.id);
@@ -810,7 +841,14 @@ function Game({ onClose }: { onClose: () => void }) {
           const crown = streaks[p.id] ?? 0;
           const micOn = phase === 'turn' && p.id === activeId && (!p.me || myMic);
           return (
-            <View key={p.id} style={{ width: camW }}>
+            <Pressable
+              key={p.id}
+              style={{ width: camW }}
+              onPress={() => {
+                tap();
+                setFocus(p);
+              }}
+            >
               <View style={[styles.cam, p.me && styles.camMe, isOut && { opacity: 0.45 }]}>
                 <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
                 {p.me && <CameraFeed trackRef={media.cameraOf('me')} mirror={media.facing === 'user'} style={StyleSheet.absoluteFill} />}
@@ -847,7 +885,7 @@ function Game({ onClose }: { onClose: () => void }) {
                 </View>
               </View>
               {isActive && <ActiveGlow />}
-            </View>
+            </Pressable>
           );
         })}
       </View>
@@ -871,7 +909,7 @@ function Game({ onClose }: { onClose: () => void }) {
           </View>
           <View style={styles.chatWrap} onLayout={(e) => setChatH(e.nativeEvent.layout.height)}>
             <View style={styles.chat}>
-              {chat.msgs.slice(-chatRows).map((m) => (
+              {(training ? [] : chat.msgs.slice(-chatRows)).map((m) => (
                 <View key={m.id} style={styles.msg}>
                   <Image source={faceOf(m.user, 60)} style={styles.msgAv} />
                   <Text style={styles.msgName} numberOfLines={1}>
@@ -890,7 +928,7 @@ function Game({ onClose }: { onClose: () => void }) {
           <Progress levelIdx={levelIdx} started={phase !== 'lobby'} />
           <View style={styles.chatWrap} onLayout={(e) => setChatH(e.nativeEvent.layout.height)}>
             <View style={styles.chat}>
-              {chat.msgs.slice(-chatRows).map((m) => {
+              {(training ? [] : chat.msgs.slice(-chatRows)).map((m) => {
                 const mention = m.text.match(/^@\S+/)?.[0];
                 return (
                   <View key={m.id} style={styles.msg}>
@@ -913,67 +951,80 @@ function Game({ onClose }: { onClose: () => void }) {
       )}
 
       {/* ── barre du bas ── */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'position' : undefined}>
-        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom - 6, 10) }]}>
-          <View style={styles.comment}>
-            <Ionicons name="chatbubble-outline" size={18} color="rgba(255,255,255,0.85)" />
-            <TextInput
-              ref={inputRef}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder="Écrire un commentaire…"
-              placeholderTextColor="rgba(255,255,255,0.6)"
-              style={styles.commentInput}
-              onSubmitEditing={sendComment}
-              returnKeyType="send"
-              selectionColor={GOLD}
-            />
-            {draft.trim() ? (
-              <Pressable onPress={sendComment} hitSlop={6} style={styles.sendBtn}>
-                <Ionicons name="send" size={15} color={INK} />
-              </Pressable>
-            ) : (
-              <Pressable onPress={() => setDraft((d) => d + '😊')} hitSlop={6}>
-                <Ionicons name="happy-outline" size={21} color="rgba(255,255,255,0.85)" />
-              </Pressable>
-            )}
-          </View>
-          <RoundGold onPress={() => setGiftOpen(true)}>
-            <Text style={{ fontSize: 20 }}>🎁</Text>
-          </RoundGold>
-          <RoundGold
-            onPress={() => {
-              tap();
-              floaters.add('🌹', width - 70, T + 560);
-              toast.show('Tu as envoyé une rose 🌹');
-            }}
-          >
-            <Text style={{ fontSize: 20 }}>🌹</Text>
-          </RoundGold>
-          <RoundGold
-            onPress={() => {
-              tap();
-              for (let k = 0; k < 3; k++) setTimeout(() => floaters.add(['❤️', '💖', '👍'][k], width - 46 - Math.random() * 26, T + 600), k * 120);
-            }}
-          >
-            <Text style={{ fontSize: 20 }}>👍</Text>
-          </RoundGold>
+      {training ? (
+        <View style={[styles.trainBar, { paddingBottom: Math.max(insets.bottom - 6, 10) }]}>
+          <Text style={styles.trainBarText}>🎯 Entraînement contre l’ordinateur · niveau {LEVEL_LABEL[level]}</Text>
         </View>
-      </KeyboardAvoidingView>
+      ) : (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'position' : undefined}>
+          <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom - 6, 10) }]}>
+            <View style={styles.comment}>
+              <Ionicons name="chatbubble-outline" size={18} color="rgba(255,255,255,0.85)" />
+              <TextInput
+                ref={inputRef}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Écrire un commentaire…"
+                placeholderTextColor="rgba(255,255,255,0.6)"
+                style={styles.commentInput}
+                onSubmitEditing={sendComment}
+                returnKeyType="send"
+                selectionColor={GOLD}
+              />
+              {draft.trim() ? (
+                <Pressable onPress={sendComment} hitSlop={6} style={styles.sendBtn}>
+                  <Ionicons name="send" size={15} color={INK} />
+                </Pressable>
+              ) : (
+                <Pressable onPress={() => setDraft((d) => d + '😊')} hitSlop={6}>
+                  <Ionicons name="happy-outline" size={21} color="rgba(255,255,255,0.85)" />
+                </Pressable>
+              )}
+            </View>
+            <RoundGold onPress={() => setGiftOpen(true)}>
+              <Text style={{ fontSize: 20 }}>🎁</Text>
+            </RoundGold>
+            <RoundGold
+              onPress={() => {
+                tap();
+                floaters.add('🌹', width - 70, T + 560);
+                toast.show('Tu as envoyé une rose 🌹');
+              }}
+            >
+              <Text style={{ fontSize: 20 }}>🌹</Text>
+            </RoundGold>
+            <RoundGold
+              onPress={() => {
+                tap();
+                for (let k = 0; k < 3; k++) setTimeout(() => floaters.add(['❤️', '💖', '👍'][k], width - 46 - Math.random() * 26, T + 600), k * 120);
+              }}
+            >
+              <Text style={{ fontSize: 20 }}>👍</Text>
+            </RoundGold>
+          </View>
+        </KeyboardAvoidingView>
+      )}
 
       {floaters.layer}
 
       {/* ── écrans par-dessus ── */}
       {phase === 'lobby' && (
         <Lobby
-          top={T + 70}
+          top={T + 56}
+          mode={mode}
+          setMode={setMode}
+          level={level}
+          setLevel={(l) => {
+            setLevel(l);
+            setTrio(pickTrio(l));
+          }}
           hostPlays={hostPlays}
           setHostPlays={setHostPlays}
-          players={lobbyPlayers(hostPlays)}
+          players={training ? [ME, ...trio] : lobbyPlayers(hostPlays)}
           onStart={() => {
             void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-            setCamReady(hostPlays);
-            startGame(lobbyPlayers(hostPlays));
+            setCamReady(!training && hostPlays);
+            startGame(training ? [ME, ...trio] : lobbyPlayers(hostPlays));
           }}
           onClose={onClose}
         />
@@ -991,6 +1042,17 @@ function Game({ onClose }: { onClose: () => void }) {
           onInvite={inviteNext}
           onChoose={() => setDrawer(true)}
           onStart={newGame}
+          training={training}
+          onReplay={() => {
+            const t = pickTrio(level);
+            setTrio(t);
+            startGame([ME, ...t]);
+          }}
+          onLobby={() => {
+            setStage([]);
+            go('lobby');
+          }}
+          onClose={onClose}
         />
       )}
 
@@ -1086,6 +1148,38 @@ function Game({ onClose }: { onClose: () => void }) {
           </FadeIn>
         </View>
       )}
+      <PlayerSheet
+        player={focus}
+        about={focus?.about ?? (focus && !focus.me ? 'Joueur Zembo' : undefined)}
+        stats={
+          focus
+            ? [
+                `${totals[focus.id] ?? 0} points dans cette partie`,
+                streaks[focus.id]
+                  ? `👑 ${streaks[focus.id]} victoire${streaks[focus.id] > 1 ? 's' : ''} de suite`
+                  : out.includes(focus.id)
+                    ? 'Éliminé de cette partie'
+                    : 'En course',
+                training ? `Niveau ${LEVEL_LABEL[level]}` : 'Sur scène en direct',
+              ]
+            : []
+        }
+        gifts={GIFTS}
+        actions={!training}
+        onClose={() => setFocus(null)}
+        onGift={(g) => {
+          if (!focus) return;
+          floaters.add(g.emoji, undefined, undefined, true);
+          chat.push(profile?.pseudo ?? 'Toi', `a envoyé ${g.emoji} ${g.name} à ${focus.name}`, true);
+          toast.show(`${g.emoji} ${g.name} envoyé à ${focus.name} !`);
+        }}
+        onApplaud={() => {
+          if (!focus) return;
+          tap();
+          for (let k = 0; k < 5; k++) setTimeout(() => floaters.add('👏', width / 2 - 60 + Math.random() * 120, T + 520), k * 110);
+          chat.push(profile?.pseudo ?? 'Toi', `👏 applaudit ${focus.name}`, true);
+        }}
+      />
       <Toast text={toast.text} top={T + 110} />
     </View>
   );
@@ -1275,9 +1369,13 @@ function Cover({ top, children }: { top: number; children: React.ReactNode }) {
   );
 }
 
-// ── Avant de commencer : qui joue, et ta caméra ──
+// ── Avant de commencer : live ou entraînement, niveau, ton rôle, ta caméra ──
 function Lobby({
   top,
+  mode,
+  setMode,
+  level,
+  setLevel,
   hostPlays,
   setHostPlays,
   players,
@@ -1285,49 +1383,88 @@ function Lobby({
   onClose,
 }: {
   top: number;
+  mode: Mode;
+  setMode: (m: Mode) => void;
+  level: Level;
+  setLevel: (l: Level) => void;
   hostPlays: boolean;
   setHostPlays: (b: boolean) => void;
   players: P[];
   onStart: () => void;
   onClose: () => void;
 }) {
+  const training = mode === 'training';
+  const withCam = !training && hostPlays;
   return (
     <Cover top={top}>
-      <Text style={{ fontSize: 34, textAlign: 'center' }}>👑</Text>
       <Text style={styles.cardTitle}>Mot d’Or</Text>
-      <Text style={styles.cardSub}>4 joueurs, chacun son tour, du mot de 4 lettres au mot de 9 lettres. Le champion reste sur scène !</Text>
+      <Text style={styles.cardSub}>Trouve le mot caché en 6 essais, du mot de 4 lettres au mot de 9 lettres.</Text>
+
+      <Text style={styles.formLabel}>Mode</Text>
       <View style={styles.choice}>
         {[
-          { v: true, t: 'Je joue aussi' },
-          { v: false, t: 'J’anime seulement' },
+          { v: 'live' as Mode, t: '🎥 En live', d: '4 joueurs sur scène, des spectateurs' },
+          { v: 'training' as Mode, t: '🎯 Entraînement', d: 'Toi contre l’ordinateur' },
         ].map((o) => (
-          <Pressable key={String(o.v)} onPress={() => setHostPlays(o.v)} style={[styles.choiceBtn, hostPlays === o.v && styles.choiceOn]}>
-            <Text style={[styles.choiceText, hostPlays === o.v && { color: INK }]}>{o.t}</Text>
+          <Pressable key={o.v} onPress={() => setMode(o.v)} style={[styles.choiceCard, mode === o.v && styles.choiceOn]}>
+            <Text style={[styles.choiceText, mode === o.v && { color: INK }]}>{o.t}</Text>
+            <Text style={[styles.choiceDesc, mode === o.v && { color: INK }]}>{o.d}</Text>
           </Pressable>
         ))}
       </View>
-      {hostPlays && (
+
+      <Text style={styles.formLabel}>Niveau</Text>
+      <View style={styles.choice}>
+        {(['facile', 'difficile', 'expert'] as Level[]).map((l) => (
+          <Pressable key={l} onPress={() => setLevel(l)} style={[styles.choiceBtn, level === l && styles.choiceOn]}>
+            <Text style={[styles.choiceText, level === l && { color: INK }]}>
+              {LEVEL_INFO[l].emoji} {LEVEL_LABEL[l]}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={styles.formHint}>{LEVEL_INFO[level].text}</Text>
+
+      {!training && (
+        <>
+          <Text style={styles.formLabel}>Ton rôle</Text>
+          <View style={styles.choice}>
+            {[
+              { v: true, t: 'Je joue', d: 'Tu prends une des 4 places sur scène' },
+              { v: false, t: 'Je présente sans jouer', d: 'Tu animes et gères la liste d’attente' },
+            ].map((o) => (
+              <Pressable key={String(o.v)} onPress={() => setHostPlays(o.v)} style={[styles.choiceCard, hostPlays === o.v && styles.choiceOn]}>
+                <Text style={[styles.choiceText, hostPlays === o.v && { color: INK }]}>{o.t}</Text>
+                <Text style={[styles.choiceDesc, hostPlays === o.v && { color: INK }]}>{o.d}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      )}
+
+      {withCam && (
         <View style={styles.lobbyCam}>
           <Image source={DEENA_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
           <CameraPreview active style={StyleSheet.absoluteFill} />
           <Text style={styles.lobbyCamText}>{mediaAvailable ? '📷 Ta caméra' : 'Aperçu dans l’app installée'}</Text>
         </View>
       )}
-      <Text style={styles.sectionTitle}>Montent sur scène</Text>
+
+      <Text style={styles.formLabel}>{training ? 'Tes adversaires' : 'Montent sur scène'}</Text>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         {players.map((p, i) => (
           <View key={p.id} style={{ flex: 1, alignItems: 'center' }}>
             <Image source={p.photo} style={[styles.upAv, p.me && { borderColor: GOLD }]} />
             <Text style={styles.upName} numberOfLines={1}>
-              {i + 1}. {nameOf(p)}
+              {training ? nameOf(p) : `${i + 1}. ${nameOf(p)}`}
             </Text>
           </View>
         ))}
       </View>
       <Pressable onPress={onStart}>
         <LinearGradient colors={goldGradient} style={styles.cta}>
-          <Ionicons name={hostPlays ? 'videocam' : 'play'} size={18} color={INK} />
-          <Text style={styles.ctaText}>{hostPlays ? 'Je suis prêt, on commence !' : 'Lancer la partie'}</Text>
+          <Ionicons name={withCam ? 'videocam' : 'play'} size={18} color={INK} />
+          <Text style={styles.ctaText}>{training ? 'Commencer l’entraînement' : withCam ? 'Je suis prêt, on commence !' : 'Lancer la partie'}</Text>
         </LinearGradient>
       </Pressable>
       <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
@@ -1393,7 +1530,15 @@ function ChampionCard({
   onInvite,
   onChoose,
   onStart,
+  training,
+  onReplay,
+  onLobby,
+  onClose,
 }: {
+  training: boolean;
+  onReplay: () => void;
+  onLobby: () => void;
+  onClose: () => void;
   top: number;
   champ: P;
   streak: number;
@@ -1410,7 +1555,13 @@ function ChampionCard({
     <Cover top={top}>
       <Text style={{ fontSize: 46, textAlign: 'center' }}>👑</Text>
       <Text style={styles.cardTitle}>{champ.me ? 'Tu es champion !' : `${champ.name} est champion !`}</Text>
-      <Text style={styles.cardSub}>{streak > 1 ? `${nameOf(champ)} — Champion, ${streak} victoires consécutives. ` : ''}Le champion reste sur scène.</Text>
+      <Text style={styles.cardSub}>
+        {training
+          ? champ.me
+            ? 'Bravo, tu as battu l’ordinateur !'
+            : 'Entraîne-toi encore, tu vas y arriver !'
+          : `${streak > 1 ? `${nameOf(champ)} — Champion, ${streak} victoires consécutives. ` : ''}Le champion reste sur scène.`}
+      </Text>
       {ranking.map((p, i) => (
         <View key={p.id} style={[styles.resRow, p.id === champ.id && styles.resOk]}>
           <Text style={styles.rankPos}>{i + 1}</Text>
@@ -1419,51 +1570,70 @@ function ChampionCard({
           <Text style={styles.resTotal}>{totals[p.id] ?? 0} pts</Text>
         </View>
       ))}
-      <View style={styles.hostBox}>
-        <Text style={styles.hostTitle}>
-          {ready
-            ? '3 joueurs prêts à monter'
-            : `${3 - accepted.length} place${3 - accepted.length > 1 ? 's' : ''} disponible${3 - accepted.length > 1 ? 's' : ''}`}
-        </Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-          {[0, 1, 2].map((i) => {
-            const p = accepted[i] ?? pending[i - accepted.length];
-            const ok = i < accepted.length;
-            return (
-              <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-                {p ? (
-                  <Image source={p.photo} style={[styles.upAv, { borderColor: ok ? GREEN : GOLD2, opacity: ok ? 1 : 0.6 }]} />
-                ) : (
-                  <View style={[styles.upAv, styles.upEmpty]} />
-                )}
-                <Text style={styles.upName} numberOfLines={1}>
-                  {p ? nameOf(p) : 'Libre'}
-                </Text>
-                <Text style={[styles.upState, { color: ok ? GREEN : GOLD }]}>{p ? (ok ? 'a accepté' : 'invité…') : ''}</Text>
-              </View>
-            );
-          })}
-        </View>
-        {ready ? (
-          <Pressable onPress={onStart}>
+      {training ? (
+        <View>
+          <Pressable onPress={onReplay}>
             <LinearGradient colors={goldGradient} style={styles.cta}>
-              <Ionicons name="play" size={18} color={INK} />
-              <Text style={styles.ctaText}>Démarrer une nouvelle partie</Text>
+              <Ionicons name="refresh" size={18} color={INK} />
+              <Text style={styles.ctaText}>Rejouer</Text>
             </LinearGradient>
           </Pressable>
-        ) : (
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable onPress={onInvite} style={{ flex: 1 }}>
-              <LinearGradient colors={goldGradient} style={styles.cta}>
-                <Text style={[styles.ctaText, { fontSize: 13.5 }]}>Inviter les 3 prochains</Text>
-              </LinearGradient>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 12 }}>
+            <Pressable onPress={onLobby} style={{ padding: 6 }}>
+              <Text style={styles.quit}>Changer de niveau</Text>
             </Pressable>
-            <Pressable onPress={onChoose} style={[styles.cta, styles.ctaGhost]}>
-              <Text style={[styles.ctaText, { color: GOLD, fontSize: 13.5 }]}>Choisir</Text>
+            <Pressable onPress={onClose} style={{ padding: 6 }}>
+              <Text style={styles.quit}>Quitter</Text>
             </Pressable>
           </View>
-        )}
-      </View>
+        </View>
+      ) : (
+        <View style={styles.hostBox}>
+          <Text style={styles.hostTitle}>
+            {ready
+              ? '3 joueurs prêts à monter'
+              : `${3 - accepted.length} place${3 - accepted.length > 1 ? 's' : ''} disponible${3 - accepted.length > 1 ? 's' : ''}`}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            {[0, 1, 2].map((i) => {
+              const p = accepted[i] ?? pending[i - accepted.length];
+              const ok = i < accepted.length;
+              return (
+                <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                  {p ? (
+                    <Image source={p.photo} style={[styles.upAv, { borderColor: ok ? GREEN : GOLD2, opacity: ok ? 1 : 0.6 }]} />
+                  ) : (
+                    <View style={[styles.upAv, styles.upEmpty]} />
+                  )}
+                  <Text style={styles.upName} numberOfLines={1}>
+                    {p ? nameOf(p) : 'Libre'}
+                  </Text>
+                  <Text style={[styles.upState, { color: ok ? GREEN : GOLD }]}>{p ? (ok ? 'a accepté' : 'invité…') : ''}</Text>
+                </View>
+              );
+            })}
+          </View>
+          {ready ? (
+            <Pressable onPress={onStart}>
+              <LinearGradient colors={goldGradient} style={styles.cta}>
+                <Ionicons name="play" size={18} color={INK} />
+                <Text style={styles.ctaText}>Démarrer une nouvelle partie</Text>
+              </LinearGradient>
+            </Pressable>
+          ) : (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable onPress={onInvite} style={{ flex: 1 }}>
+                <LinearGradient colors={goldGradient} style={styles.cta}>
+                  <Text style={[styles.ctaText, { fontSize: 13.5 }]}>Inviter les 3 prochains</Text>
+                </LinearGradient>
+              </Pressable>
+              <Pressable onPress={onChoose} style={[styles.cta, styles.ctaGhost]}>
+                <Text style={[styles.ctaText, { color: GOLD, fontSize: 13.5 }]}>Choisir</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      )}
     </Cover>
   );
 }
@@ -1864,10 +2034,36 @@ const styles = StyleSheet.create({
   },
   choiceOn: { backgroundColor: GOLD },
   choiceText: { color: GOLD, fontSize: 13.5, fontWeight: '900' },
+  choiceCard: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: GOLD2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+  },
+  choiceDesc: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '700', textAlign: 'center', marginTop: 2 },
+  formLabel: { color: GOLD, fontSize: 13, fontWeight: '900', letterSpacing: 0.5, marginBottom: 6 },
+  formHint: { color: 'rgba(255,255,255,0.7)', fontSize: 12, textAlign: 'center', marginTop: -6, marginBottom: 12 },
+  trainBadge: {
+    backgroundColor: 'rgba(61,220,151,0.18)',
+    borderWidth: 1,
+    borderColor: GREEN,
+    paddingHorizontal: 8,
+    height: 20,
+    borderRadius: 6,
+    justifyContent: 'center',
+  },
+  trainText: { color: '#7CF2B5', fontSize: 10.5, fontWeight: '900', letterSpacing: 0.5 },
+  trainBar: { alignItems: 'center', paddingTop: 8 },
+  trainBarText: { color: 'rgba(255,255,255,0.7)', fontSize: 12.5, fontWeight: '800' },
   lobbyCam: {
     alignSelf: 'center',
-    width: 130,
-    height: 170,
+    width: 92,
+    height: 120,
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 2,

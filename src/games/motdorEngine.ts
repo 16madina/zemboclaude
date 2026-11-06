@@ -13,18 +13,32 @@ export const TURN_TIME: Record<number, number> = { 4: 60, 5: 75, 6: 90, 7: 105, 
 /** Lettres données d'avance : la première, et les deux premières pour 9 lettres */
 export const givenCount = (len: number) => (len >= 9 ? 2 : 1);
 
+export type Level = 'facile' | 'difficile' | 'expert';
+export const LEVEL_LABEL: Record<Level, string> = { facile: 'Facile', difficile: 'Difficile', expert: 'Expert' };
+/** Le temps est plus long en Facile, plus court en Expert */
+export const TIME_FACTOR: Record<Level, number> = { facile: 1.3, difficile: 1, expert: 0.75 };
+export const turnTime = (len: number, level: Level) => Math.round(TURN_TIME[len] * TIME_FACTOR[level]);
+// mots à ne jamais faire deviner en live
+const BANNED = new Set(['CACA', 'PIPI', 'CULS', 'CONNE', 'PUTE', 'MERDE', 'BITE', 'CHIER', 'BAISER', 'NICHON', 'ENCULER', 'PUTAIN', 'SALOPE', 'CONNARD', 'BORDEL', 'NEGRE', 'NEGRESSE']);
+
 let pools: Record<number, string[]> | null = null;
+/** Tous les mots d'une longueur, du plus courant au plus rare */
 export function pool(len: number) {
   if (!pools) {
     pools = {};
-    for (const [k, v] of Object.entries(SECRETS)) pools[Number(k)] = v.split(' ');
+    for (const [k, v] of Object.entries(SECRETS)) pools[Number(k)] = v.split(' ').filter((w) => !BANNED.has(w));
   }
   return pools[len] ?? [];
 }
 
+/** Facile : mots très courants. Difficile : courants. Expert : plus rares. */
+const SLICE: Record<Level, [number, number]> = { facile: [0, 0.35], difficile: [0.2, 0.7], expert: [0.5, 1] };
+
 /** Tire des mots différents, de même longueur, jamais déjà joués dans la partie */
-export function pickWords(len: number, count: number, used: Set<string>) {
-  const list = pool(len).filter((w) => !used.has(w));
+export function pickWords(len: number, count: number, used: Set<string>, level: Level = 'difficile') {
+  const all = pool(len);
+  const [a, b] = SLICE[level];
+  const list = all.slice(Math.floor(all.length * a), Math.ceil(all.length * b)).filter((w) => !used.has(w));
   const out: string[] = [];
   while (out.length < count && list.length) out.push(list.splice(Math.floor(Math.random() * list.length), 1)[0]);
   return out;

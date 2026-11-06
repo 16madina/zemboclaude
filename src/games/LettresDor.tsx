@@ -13,6 +13,9 @@ import { findPerson } from '../world/data';
 import { useSession } from '../lib/session';
 import { auth } from '../lib/firebase';
 import { CameraFeed, CameraPreview, mediaAvailable, useLiveMedia } from '../live/media';
+import { PlayerSheet } from './PlayerSheet';
+import { BOTS, LEVEL_INFO } from './bots';
+import { LEVEL_LABEL, type Level } from './motdorEngine';
 import {
   LETTER_COUNT,
   MIN_CONSONANTS,
@@ -59,7 +62,10 @@ const NAVY = 'rgba(14,16,52,0.88)';
 const PURPLE = '#8B5CF6';
 const BLUE = '#5B7CFF';
 const GREEN = '#3DDC97';
-const DURATION = { L: 30, C: 40 };
+// chrono selon le niveau : plus long en Facile, plus court en Expert
+const DURS: Record<Level, { L: number; C: number }> = { facile: { L: 45, C: 60 }, difficile: { L: 30, C: 40 }, expert: { L: 20, C: 30 } };
+// entraînement : 6 épreuves contre l'ordinateur, sans élimination
+const TRAIN_STAGE = { n: 4, label: 'Entraînement', rounds: ['L', 'L', 'C', 'L', 'L', 'C'] as Kind[] };
 const TICK = 250;
 const MANCHES = 5;
 const CHOOSE_TIME = 6;
@@ -87,11 +93,36 @@ type RoundData =
   | { kind: 'L'; letters: string[]; sol: ReturnType<typeof solveLetters> }
   | { kind: 'C'; plaques: number[]; target: number; best: number; bestSteps: string[]; reach: Map<number, string[]> };
 type Result = { id: string; answer: Answer | null; valid: boolean; points: number; dist?: number; note: string };
-type Phase = 'mode' | 'intro' | 'choose' | 'draw' | 'play' | 'reveal' | 'elim' | 'champion' | 'end' | 'size' | 'signup' | 'tableEnd' | 'leagueEnd' | 'camcheck';
-type Format = 'tournoi' | 'groupe';
+type Phase =
+  | 'mode'
+  | 'intro'
+  | 'choose'
+  | 'draw'
+  | 'play'
+  | 'reveal'
+  | 'elim'
+  | 'champion'
+  | 'end'
+  | 'size'
+  | 'signup'
+  | 'tableEnd'
+  | 'leagueEnd'
+  | 'camcheck'
+  | 'level'
+  | 'trainEnd';
+type Format = 'tournoi' | 'groupe' | 'training';
 type Standing = { p: Player; pts: number; game: number; wins: number };
-type TableEnd = { ranking: Player[]; label: string; next: Player[]; nextLabel: string; note: string; step: 'table' | 'ronde' | 'final'; tables?: Player[][]; absent?: string[] };
-const IDLE: Phase[] = ['intro', 'mode', 'elim', 'champion', 'end', 'size', 'signup', 'tableEnd', 'leagueEnd', 'camcheck'];
+type TableEnd = {
+  ranking: Player[];
+  label: string;
+  next: Player[];
+  nextLabel: string;
+  note: string;
+  step: 'table' | 'ronde' | 'final';
+  tables?: Player[][];
+  absent?: string[];
+};
+const IDLE: Phase[] = ['intro', 'mode', 'elim', 'champion', 'end', 'size', 'signup', 'tableEnd', 'leagueEnd', 'camcheck', 'level', 'trainEnd'];
 type Overlay = { who: Player; ranking: Player[]; up?: Player[] };
 type Crowns = Record<string, { n: number; p: Player }>;
 
@@ -102,9 +133,40 @@ const LEVELS: BotLevel[] = [
   { exact: 0.4, slack: [0, 1, 2] },
 ];
 // spectateurs qui demandent à monter (simulés)
-const VIEWERS = ['Fatou', 'Yann', 'Nadia', 'Karim', 'Sophie', 'Djamal', 'Lina', 'Alex', 'Emma', 'Momo', 'Sarah', 'Kevin', 'Bintou', 'Idriss', 'Leïla', 'Malik', 'Noura', 'Jordan', 'Mariam', 'Samir'];
+const VIEWERS = [
+  'Fatou',
+  'Yann',
+  'Nadia',
+  'Karim',
+  'Sophie',
+  'Djamal',
+  'Lina',
+  'Alex',
+  'Emma',
+  'Momo',
+  'Sarah',
+  'Kevin',
+  'Bintou',
+  'Idriss',
+  'Leïla',
+  'Malik',
+  'Noura',
+  'Jordan',
+  'Mariam',
+  'Samir',
+];
 
 const fresh = (p: Player): Player => ({ ...p, score: 0, last: 0 });
+/** Entraînement : 3 adversaires tirés parmi les 4 du niveau */
+const pickBots = (level: Level): Player[] =>
+  [...BOTS[level]]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3)
+    .map((b) => ({ id: b.id, name: b.name, photo: b.photo, level: b.letters, score: 0, last: 0 }));
+const aboutOf = (id: string) =>
+  Object.values(BOTS)
+    .flat()
+    .find((b) => b.id === id)?.about;
 const shuffle = <T,>(a: T[]) => {
   const b = [...a];
   for (let i = b.length - 1; i > 0; i--) {
@@ -229,13 +291,17 @@ function Game({ onClose }: { onClose: () => void }) {
   const [absentIds, setAbsentIds] = useState<string[]>([]);
   const tableEndAt = useRef(0);
   const group = format === 'groupe';
+  const training = format === 'training';
+  const [level, setLevel] = useState<Level>('difficile');
+  const [trainBots, setTrainBots] = useState<Player[]>(() => pickBots('difficile'));
+  const [focus, setFocus] = useState<Player | null>(null);
   const rondes = RONDES[lgSize] ?? 4;
   const general = sortStandings(standings);
   const rankOf = (id: string) => general.findIndex((x) => x.p.id === id) + 1;
 
-  const STAGE = group ? (isFinal ? FINAL_STAGE : TABLE_STAGE) : STAGES[stageIdx];
+  const STAGE = training ? TRAIN_STAGE : group ? (isFinal ? FINAL_STAGE : TABLE_STAGE) : STAGES[stageIdx];
   const kind = STAGE.rounds[epreuve];
-  const duration = DURATION[kind];
+  const duration = DURS[level][kind];
   const left = duration - elapsed;
   const meOnStage = stage.some((p) => p.me);
   const meQueued = queue.some((p) => p.me);
@@ -248,7 +314,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const [camReady, setCamReady] = useState(false);
   const [afterCam, setAfterCam] = useState<Phase>('intro');
   const [myMic, setMyMic] = useState(true);
-  const liveRoom = mediaAvailable && phase !== 'mode' && auth.currentUser ? `lettres-${auth.currentUser.uid}` : null;
+  const liveRoom = mediaAvailable && !training && !['mode', 'level'].includes(phase) && auth.currentUser ? `lettres-${auth.currentUser.uid}` : null;
   const media = useLiveMedia(liveRoom, {
     publish: camReady && meOnStage && !['mode', 'size', 'signup', 'camcheck'].includes(phase),
     mic: myMic && phase !== 'play',
@@ -262,7 +328,14 @@ function Game({ onClose }: { onClose: () => void }) {
 
   // ── championnat : ta place, la prochaine table ──
   const nextTable = group && !isFinal && tableIdx + 1 < tables.length ? tables[tableIdx + 1] : null;
-  const nextNote = !group || isFinal || phase === 'size' || phase === 'signup' || phase === 'leagueEnd' ? null : nextTable ? 'Ensuite' : ronde < rondes ? `Ronde ${ronde + 1} ensuite` : 'Finale ensuite';
+  const nextNote =
+    !group || isFinal || phase === 'size' || phase === 'signup' || phase === 'leagueEnd'
+      ? null
+      : nextTable
+        ? 'Ensuite'
+        : ronde < rondes
+          ? `Ronde ${ronde + 1} ensuite`
+          : 'Finale ensuite';
   const myTable = group ? tables.findIndex((t) => t.some((p) => p.me)) : -1;
   const myStatus = (() => {
     if (!group || meOnStage || !general.length || phase === 'size' || phase === 'signup' || phase === 'leagueEnd') return null;
@@ -284,7 +357,7 @@ function Game({ onClose }: { onClose: () => void }) {
 
   // ── des spectateurs demandent à monter de temps en temps ──
   useEffect(() => {
-    if (phase === 'mode' || group) return;
+    if (phase === 'mode' || phase === 'level' || group || training) return;
     const t = setInterval(() => {
       setQueue((q) => {
         if (q.length >= 6) return q;
@@ -300,13 +373,16 @@ function Game({ onClose }: { onClose: () => void }) {
   // ── championnat : les spectateurs s'inscrivent jusqu'à ce que le groupe soit complet ──
   useEffect(() => {
     if (phase !== 'signup' || signups.length >= lgSize) return;
-    const t = setTimeout(() => {
-      const taken = new Set(signups.map((p) => p.name));
-      let v = newViewer();
-      for (let k = 0; k < 40 && taken.has(v.name); k++) v = newViewer();
-      chat.push(v.name, '✍️ s’inscrit au championnat');
-      setSignups((cur) => [...cur, v]);
-    }, rand(250, 600));
+    const t = setTimeout(
+      () => {
+        const taken = new Set(signups.map((p) => p.name));
+        let v = newViewer();
+        for (let k = 0; k < 40 && taken.has(v.name); k++) v = newViewer();
+        chat.push(v.name, '✍️ s’inscrit au championnat');
+        setSignups((cur) => [...cur, v]);
+      },
+      rand(250, 600),
+    );
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, signups, lgSize]);
@@ -342,7 +418,10 @@ function Game({ onClose }: { onClose: () => void }) {
   // fin d'une table : points au classement, puis table suivante, ronde suivante ou grande finale
   const endTable = (present: Player[]) => {
     // les absents finissent derniers, avec 0 point
-    const away = absentIds.map((id) => standings[id]?.p).filter((p): p is Player => !!p).map(fresh);
+    const away = absentIds
+      .map((id) => standings[id]?.p)
+      .filter((p): p is Player => !!p)
+      .map(fresh);
     if (isFinal) {
       // égalité en finale : le mieux classé des rondes passe devant
       const fin = [...present].sort((x, y) => y.score - x.score || y.last - x.last || rankOf(x.id) - rankOf(y.id));
@@ -484,7 +563,7 @@ function Game({ onClose }: { onClose: () => void }) {
         const answers: Record<string, Answer | null> = {};
         for (const b of stage.filter((p) => !p.me)) {
           const c = botCount(s.reach, target, b.level);
-          answers[b.id] = Math.random() < 0.05 ? null : { at: rand(14, 37), value: c.value, steps: c.steps };
+          answers[b.id] = Math.random() < 0.05 ? null : { at: rand(0.35, 0.92) * duration, value: c.value, steps: c.steps };
         }
         botAnswers.current = answers;
         setData({ kind: 'C', plaques, target, best: s.best, bestSteps: s.steps, reach: s.reach });
@@ -519,7 +598,7 @@ function Game({ onClose }: { onClose: () => void }) {
         const answers: Record<string, Answer | null> = {};
         for (const b of stage.filter((p) => !p.me)) {
           const w = botWord(sol, b.level);
-          answers[b.id] = !w || Math.random() < 0.05 ? null : { at: rand(8, 27), word: w };
+          answers[b.id] = !w || Math.random() < 0.05 ? null : { at: rand(0.27, 0.9) * duration, word: w };
         }
         botAnswers.current = answers;
         setData({ kind: 'L', letters, sol });
@@ -690,6 +769,11 @@ function Game({ onClose }: { onClose: () => void }) {
       return;
     }
     const ranking = ranked(stage);
+    if (training) {
+      setOverlay({ who: ranking[0], ranking });
+      setPhase('trainEnd');
+      return;
+    }
     if (group) return endTable(ranking);
     if (stage.length > 2) {
       // le dernier descend de la scène
@@ -849,8 +933,7 @@ function Game({ onClose }: { onClose: () => void }) {
   const resultOf = (id: string) => results.find((r) => r.id === id);
   const revealedIds = results.slice(0, revealed).map((r) => r.id);
   const myChoice = phase === 'choose' && chooser?.me && letters.length < LETTER_COUNT;
-  const ringValue =
-    phase === 'play' ? left : phase === 'reveal' ? Math.max(0, duration - elapsed) : myChoice ? Math.max(0, chooseLeft) : duration;
+  const ringValue = phase === 'play' ? left : phase === 'reveal' ? Math.max(0, duration - elapsed) : myChoice ? Math.max(0, chooseLeft) : duration;
   const ringTotal = myChoice ? CHOOSE_TIME : duration;
   const reveal = phase === 'reveal';
   const showLetters = kind === 'L' && (phase === 'choose' || ((phase === 'play' || phase === 'reveal') && data?.kind === 'L'));
@@ -871,19 +954,29 @@ function Game({ onClose }: { onClose: () => void }) {
             Lettres d’Or <Text style={styles.titleZembo}>ZEMBO</Text>
           </Text>
           <View style={styles.liveRow}>
-            <View style={styles.liveBadge}>
-              <Text style={styles.liveText}>LIVE</Text>
-            </View>
-            <View style={styles.viewers}>
-              <Ionicons name="eye-outline" size={12} color="#fff" />
-              <Text style={styles.viewersText}>1 248</Text>
-            </View>
+            {training ? (
+              <View style={styles.trainBadge}>
+                <Text style={styles.trainText}>ENTRAÎNEMENT · {LEVEL_LABEL[level].toUpperCase()}</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.liveBadge}>
+                  <Text style={styles.liveText}>LIVE</Text>
+                </View>
+                <View style={styles.viewers}>
+                  <Ionicons name="eye-outline" size={12} color="#fff" />
+                  <Text style={styles.viewersText}>1 248</Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
-        <View style={styles.prize}>
-          <Text style={{ fontSize: 15 }}>🏆</Text>
-          <Text style={styles.prizeText}>500 Zems</Text>
-        </View>
+        {!training && (
+          <View style={styles.prize}>
+            <Text style={{ fontSize: 15 }}>🏆</Text>
+            <Text style={styles.prizeText}>500 Zems</Text>
+          </View>
+        )}
         <Pressable onPress={() => toast.show('Lien du live copié')} hitSlop={8} style={[styles.roundBtn, { marginLeft: 8 }]}>
           <Ionicons name="share-social-outline" size={17} color="#fff" />
         </Pressable>
@@ -896,7 +989,13 @@ function Game({ onClose }: { onClose: () => void }) {
             <View style={styles.sideLeft}>
               <View style={styles.sidePill}>
                 <Text style={styles.sideText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-                  {group ? (isFinal ? 'Grande finale' : `Ronde ${ronde}/${rondes}`) : `Manche ${manche}/${MANCHES}`}
+                  {training
+                    ? `Épreuve ${epreuve + 1}/${TRAIN_STAGE.rounds.length}`
+                    : group
+                      ? isFinal
+                        ? 'Grande finale'
+                        : `Ronde ${ronde}/${rondes}`
+                      : `Manche ${manche}/${MANCHES}`}
                 </Text>
               </View>
             </View>
@@ -909,7 +1008,7 @@ function Game({ onClose }: { onClose: () => void }) {
             <View style={styles.sideRight}>
               <View style={styles.sidePill}>
                 <Text style={[styles.sideText, { color: GOLD, flexShrink: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-                  {group ? (isFinal ? 'Top 4' : `Table ${tableIdx + 1}/${tables.length || 1}`) : STAGE.label}
+                  {training ? '🎯' : group ? (isFinal ? 'Top 4' : `Table ${tableIdx + 1}/${tables.length || 1}`) : STAGE.label}
                 </Text>
                 <View style={styles.dots}>
                   {STAGE.rounds.map((k, i) => (
@@ -922,7 +1021,12 @@ function Game({ onClose }: { onClose: () => void }) {
 
           <View style={{ marginTop: 8 }}>
             {IDLE.includes(phase) && (
-              <IntroText epreuve={epreuve} total={STAGE.rounds.length} stageLabel={group ? (isFinal ? 'Grande finale' : `Ronde ${ronde} · Table ${tableIdx + 1}`) : STAGE.label} kind={kind} />
+              <IntroText
+                epreuve={epreuve}
+                total={STAGE.rounds.length}
+                stageLabel={group ? (isFinal ? 'Grande finale' : `Ronde ${ronde} · Table ${tableIdx + 1}`) : STAGE.label}
+                kind={kind}
+              />
             )}
 
             {/* lettres : 10 tuiles sur une ligne */}
@@ -936,10 +1040,18 @@ function Game({ onClose }: { onClose: () => void }) {
                   return (
                     <Pressable key={i} onPress={() => pickTile(i)} disabled={!canPlay}>
                       <LinearGradient
-                        colors={dim || reveal ? ['#4A3A1C', '#2B2210'] : isVowel(l) && phase === 'choose' ? ['#FFF6D0', '#F6D36A', '#C99A2E'] : ['#FFF0B0', '#F3C14B', '#B98318']}
+                        colors={
+                          dim || reveal
+                            ? ['#4A3A1C', '#2B2210']
+                            : isVowel(l) && phase === 'choose'
+                              ? ['#FFF6D0', '#F6D36A', '#C99A2E']
+                              : ['#FFF0B0', '#F3C14B', '#B98318']
+                        }
                         style={[styles.tile, { width: tile, height: 46 }]}
                       >
-                        <Text style={[styles.tileText, { fontSize: Math.min(24, tile * 0.68) }, (dim || reveal) && used && { color: 'rgba(243,210,122,0.5)' }]}>{l}</Text>
+                        <Text style={[styles.tileText, { fontSize: Math.min(24, tile * 0.68) }, (dim || reveal) && used && { color: 'rgba(243,210,122,0.5)' }]}>
+                          {l}
+                        </Text>
                       </LinearGradient>
                     </Pressable>
                   );
@@ -965,7 +1077,15 @@ function Game({ onClose }: { onClose: () => void }) {
                     const x = phase === 'play' && meOnStage ? items[i] : { v, used: false };
                     return (
                       <Pressable key={i} onPress={() => pressPlaque(i)} disabled={!visible || !canPlay || x.used}>
-                        <View style={[styles.plaque, { width: plaqueW }, x.used && styles.plaqueUsed, sel === i && canPlay && styles.plaqueSel, !visible && styles.tileEmpty]}>
+                        <View
+                          style={[
+                            styles.plaque,
+                            { width: plaqueW },
+                            x.used && styles.plaqueUsed,
+                            sel === i && canPlay && styles.plaqueSel,
+                            !visible && styles.tileEmpty,
+                          ]}
+                        >
                           <Text style={[styles.plaqueText, x.used && styles.plaqueTextUsed]}>{visible ? x.v : ''}</Text>
                         </View>
                       </Pressable>
@@ -1019,8 +1139,8 @@ function Game({ onClose }: { onClose: () => void }) {
               {IDLE.includes(phase) && (
                 <Text style={styles.hint}>
                   {kind === 'L'
-                    ? `Chacun choisit voyelle ou consonne à son tour. ${DURATION.L} s · 1 point par lettre.`
-                    : `6 plaques · ${DURATION.C} s · 10 pts si exact, 7 au plus proche.`}
+                    ? `Chacun choisit voyelle ou consonne à son tour. ${DURS[level].L} s · 1 point par lettre.`
+                    : `6 plaques · ${DURS[level].C} s · 10 pts si exact, 7 au plus proche.`}
                 </Text>
               )}
 
@@ -1031,17 +1151,17 @@ function Game({ onClose }: { onClose: () => void }) {
                   <View>
                     <Text style={styles.myTurn}>À toi ! Voyelle ou consonne ?</Text>
                     <View style={styles.inputRow}>
-                    <Pressable onPress={() => choose('V')} style={{ flex: 1 }}>
-                      <LinearGradient colors={['#FFF6D0', '#F6D36A', '#C99A2E']} style={styles.vcBtn}>
-                        <Text style={styles.vcText}>Voyelle</Text>
-                      </LinearGradient>
-                    </Pressable>
-                    <Pressable onPress={() => choose('C')} style={{ flex: 1 }}>
-                      <LinearGradient colors={['#B79CFF', '#7C4DFF', '#4B2BB8']} style={styles.vcBtn}>
-                        <Text style={[styles.vcText, { color: '#fff' }]}>Consonne</Text>
-                      </LinearGradient>
-                    </Pressable>
-                  </View>
+                      <Pressable onPress={() => choose('V')} style={{ flex: 1 }}>
+                        <LinearGradient colors={['#FFF6D0', '#F6D36A', '#C99A2E']} style={styles.vcBtn}>
+                          <Text style={styles.vcText}>Voyelle</Text>
+                        </LinearGradient>
+                      </Pressable>
+                      <Pressable onPress={() => choose('C')} style={{ flex: 1 }}>
+                        <LinearGradient colors={['#B79CFF', '#7C4DFF', '#4B2BB8']} style={styles.vcBtn}>
+                          <Text style={[styles.vcText, { color: '#fff' }]}>Consonne</Text>
+                        </LinearGradient>
+                      </Pressable>
+                    </View>
                   </View>
                 ) : (
                   <View>
@@ -1112,7 +1232,9 @@ function Game({ onClose }: { onClose: () => void }) {
                 <View style={styles.revealLine}>
                   <View style={{ flex: 1 }}>
                     {revealed <= results.length ? (
-                      <Text style={styles.revealMsg}>{stoppedEarly ? 'Tout le monde a répondu : chrono arrêté ! Révélation…' : 'Temps écoulé ! Révélation…'}</Text>
+                      <Text style={styles.revealMsg}>
+                        {stoppedEarly ? 'Tout le monde a répondu : chrono arrêté ! Révélation…' : 'Temps écoulé ! Révélation…'}
+                      </Text>
                     ) : data.kind === 'L' ? (
                       <Text style={styles.revealMsg} numberOfLines={2}>
                         Meilleur mot : <Text style={{ color: GOLD, fontWeight: '900' }}>{data.sol.words[0] ?? '—'}</Text>
@@ -1147,7 +1269,14 @@ function Game({ onClose }: { onClose: () => void }) {
           const crown = group ? 0 : (crowns[p.id]?.n ?? 0);
           const rank = group && general.some((x) => x.pts > 0) ? rankOf(p.id) : 0;
           return (
-            <View key={p.id} style={{ width: camW }}>
+            <Pressable
+              key={p.id}
+              style={{ width: camW }}
+              onPress={() => {
+                tap();
+                setFocus(p);
+              }}
+            >
               <View style={[styles.cam, { height: card4 * 1.6 }, p.me && styles.camMe, (flash || choosing) && styles.camFlash]}>
                 <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
                 {p.me && <CameraFeed trackRef={media.cameraOf('me')} mirror={media.facing === 'user'} style={StyleSheet.absoluteFill} />}
@@ -1175,7 +1304,11 @@ function Game({ onClose }: { onClose: () => void }) {
                     </Pressable>
                   </View>
                 )}
-                <LinearGradient colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']} locations={[0.45, 0.75, 1]} style={StyleSheet.absoluteFill} />
+                <LinearGradient
+                  colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']}
+                  locations={[0.45, 0.75, 1]}
+                  style={StyleSheet.absoluteFill}
+                />
                 <View style={styles.camDot} />
                 {(micsOff || (p.me && !myMic)) && (
                   <View style={styles.micOff} pointerEvents="none">
@@ -1184,7 +1317,9 @@ function Game({ onClose }: { onClose: () => void }) {
                 )}
                 {phase === 'choose' && lastPick?.whoId === p.id && (
                   <FadeIn key={letters.length} style={[styles.pickBubble, lastPick.type === 'V' ? styles.pickV : styles.pickC]} pointerEvents="none">
-                    <Text style={[styles.pickBubbleText, lastPick.type === 'C' && { color: '#fff' }]}>{lastPick.type === 'V' ? 'Voyelle !' : 'Consonne !'}</Text>
+                    <Text style={[styles.pickBubbleText, lastPick.type === 'C' && { color: '#fff' }]}>
+                      {lastPick.type === 'V' ? 'Voyelle !' : 'Consonne !'}
+                    </Text>
                   </FadeIn>
                 )}
                 {choosing && (
@@ -1209,7 +1344,7 @@ function Game({ onClose }: { onClose: () => void }) {
                   <Text style={styles.crownText}>{rank > 0 ? `#${rank} · ${pts(standings[p.id]?.pts ?? 0)}` : `👑 ${crown}`}</Text>
                 </View>
               )}
-            </View>
+            </Pressable>
           );
         })}
       </View>
@@ -1261,7 +1396,7 @@ function Game({ onClose }: { onClose: () => void }) {
         }}
       >
         <View style={styles.chat}>
-          {chat.msgs.slice(-chatRows).map((m) => {
+          {(training ? [] : chat.msgs.slice(-chatRows)).map((m) => {
             const mention = m.text.match(/^@\S+/)?.[0];
             return (
               <View key={m.id} style={styles.msg}>
@@ -1279,61 +1414,69 @@ function Game({ onClose }: { onClose: () => void }) {
             );
           })}
         </View>
-        <Pressable onPress={hearts} style={styles.likeBubble}>
-          <Ionicons name="thumbs-up" size={18} color="#fff" />
-        </Pressable>
+        {!training && (
+          <Pressable onPress={hearts} style={styles.likeBubble}>
+            <Ionicons name="thumbs-up" size={18} color="#fff" />
+          </Pressable>
+        )}
       </View>
 
       {/* ── barre du bas ── */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'position' : undefined}>
-        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom - 6, 10) }]}>
-          <View style={styles.comment}>
-            <Ionicons name="chatbubble-outline" size={18} color="rgba(255,255,255,0.85)" />
-            <TextInput
-              ref={inputRef}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder="Écrire un commentaire…"
-              placeholderTextColor="rgba(255,255,255,0.6)"
-              style={styles.commentInput}
-              onSubmitEditing={sendComment}
-              returnKeyType="send"
-              selectionColor={GOLD}
-            />
-            {draft.trim() ? (
-              <Pressable onPress={sendComment} hitSlop={6} style={styles.sendBtn}>
-                <Ionicons name="send" size={15} color={INK} />
-              </Pressable>
-            ) : (
-              <Pressable onPress={() => setDraft((d) => d + '😊')} hitSlop={6}>
-                <Ionicons name="happy-outline" size={21} color="rgba(255,255,255,0.85)" />
-              </Pressable>
-            )}
-          </View>
-          <RoundGold onPress={() => setGiftOpen(true)}>
-            <Text style={{ fontSize: 20 }}>🎁</Text>
-          </RoundGold>
-          <RoundGold
-            onPress={() => {
-              tap();
-              floaters.add('🌹', width - 70, chatY.current + 40);
-              toast.show('Tu as envoyé une rose 🌹');
-            }}
-          >
-            <Text style={{ fontSize: 20 }}>🌹</Text>
-          </RoundGold>
-          <View>
-            <RoundGold onPress={() => setQueueOpen(true)}>
-              <Text style={{ fontSize: 20 }}>{group ? '📊' : '🙋'}</Text>
-            </RoundGold>
-            {!group && queue.length > 0 && (
-              <View style={styles.badge} pointerEvents="none">
-                <Text style={styles.badgeText}>{queue.length}</Text>
-              </View>
-            )}
-          </View>
+      {training ? (
+        <View style={[styles.trainBar, { paddingBottom: Math.max(insets.bottom - 6, 10) }]}>
+          <Text style={styles.trainBarText}>🎯 Entraînement contre l’ordinateur · niveau {LEVEL_LABEL[level]}</Text>
         </View>
-      </KeyboardAvoidingView>
+      ) : (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'position' : undefined}>
+          <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom - 6, 10) }]}>
+            <View style={styles.comment}>
+              <Ionicons name="chatbubble-outline" size={18} color="rgba(255,255,255,0.85)" />
+              <TextInput
+                ref={inputRef}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Écrire un commentaire…"
+                placeholderTextColor="rgba(255,255,255,0.6)"
+                style={styles.commentInput}
+                onSubmitEditing={sendComment}
+                returnKeyType="send"
+                selectionColor={GOLD}
+              />
+              {draft.trim() ? (
+                <Pressable onPress={sendComment} hitSlop={6} style={styles.sendBtn}>
+                  <Ionicons name="send" size={15} color={INK} />
+                </Pressable>
+              ) : (
+                <Pressable onPress={() => setDraft((d) => d + '😊')} hitSlop={6}>
+                  <Ionicons name="happy-outline" size={21} color="rgba(255,255,255,0.85)" />
+                </Pressable>
+              )}
+            </View>
+            <RoundGold onPress={() => setGiftOpen(true)}>
+              <Text style={{ fontSize: 20 }}>🎁</Text>
+            </RoundGold>
+            <RoundGold
+              onPress={() => {
+                tap();
+                floaters.add('🌹', width - 70, chatY.current + 40);
+                toast.show('Tu as envoyé une rose 🌹');
+              }}
+            >
+              <Text style={{ fontSize: 20 }}>🌹</Text>
+            </RoundGold>
+            <View>
+              <RoundGold onPress={() => setQueueOpen(true)}>
+                <Text style={{ fontSize: 20 }}>{group ? '📊' : '🙋'}</Text>
+              </RoundGold>
+              {!group && queue.length > 0 && (
+                <View style={styles.badge} pointerEvents="none">
+                  <Text style={styles.badgeText}>{queue.length}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      )}
 
       {floaters.layer}
 
@@ -1343,14 +1486,65 @@ function Game({ onClose }: { onClose: () => void }) {
           top={T + 120}
           onTournament={() => {
             setFormat('tournoi');
-            setAfterCam('intro');
-            setPhase(camReady ? 'intro' : 'camcheck');
+            setPhase('level');
           }}
           onGroup={() => {
             tap();
             setFormat('groupe');
-            setAfterCam('size');
-            setPhase(camReady ? 'size' : 'camcheck');
+            setPhase('level');
+          }}
+          onTraining={() => {
+            tap();
+            setFormat('training');
+            setPhase('level');
+          }}
+          onClose={onClose}
+        />
+      )}
+      {phase === 'level' && (
+        <LevelPicker
+          top={T + 90}
+          training={training}
+          level={level}
+          bots={trainBots}
+          onLevel={(l) => {
+            tap();
+            setLevel(l);
+            setTrainBots(pickBots(l));
+          }}
+          onGo={() => {
+            if (training) {
+              setStage([fresh(ME), ...trainBots.map(fresh)]);
+              setStageIdx(0);
+              setEpreuve(0);
+              setPhase('intro');
+            } else if (group) {
+              setAfterCam('size');
+              setPhase(camReady ? 'size' : 'camcheck');
+            } else {
+              setAfterCam('intro');
+              setPhase(camReady ? 'intro' : 'camcheck');
+            }
+          }}
+          onBack={() => setPhase('mode')}
+        />
+      )}
+      {phase === 'trainEnd' && overlay && (
+        <TrainEndCard
+          o={overlay}
+          level={level}
+          top={T + 90}
+          onReplay={() => {
+            const b = pickBots(level);
+            setTrainBots(b);
+            setStage([fresh(ME), ...b.map(fresh)]);
+            setEpreuve(0);
+            setOverlay(null);
+            setPhase('intro');
+          }}
+          onLevel={() => {
+            setOverlay(null);
+            setPhase('level');
           }}
           onClose={onClose}
         />
@@ -1363,7 +1557,7 @@ function Game({ onClose }: { onClose: () => void }) {
             setCamReady(true);
             setPhase(afterCam);
           }}
-          onBack={() => setPhase('mode')}
+          onBack={() => setPhase('level')}
         />
       )}
       {phase === 'size' && <SizePicker top={T + 100} onPick={pickSize} onBack={() => setPhase('mode')} />}
@@ -1459,6 +1653,38 @@ function Game({ onClose }: { onClose: () => void }) {
           }}
         />
       </Sheet>
+      <PlayerSheet
+        player={focus}
+        about={focus ? (aboutOf(focus.id) ?? (focus.me ? undefined : 'Joueur Zembo')) : undefined}
+        stats={
+          focus
+            ? [
+                `${stage.find((x) => x.id === focus.id)?.score ?? focus.score} points dans ce tour`,
+                group
+                  ? `Classement : ${rankOf(focus.id) || '—'}${standings[focus.id] ? ` · ${pts(standings[focus.id].pts)}` : ''}`
+                  : crowns[focus.id]
+                    ? `👑 ${crowns[focus.id].n} couronne${crowns[focus.id].n > 1 ? 's' : ''}`
+                    : 'Pas encore de couronne',
+                training ? `Niveau ${LEVEL_LABEL[level]}` : 'Sur scène en direct',
+              ]
+            : []
+        }
+        gifts={GIFTS}
+        actions={!training}
+        onClose={() => setFocus(null)}
+        onGift={(g) => {
+          if (!focus) return;
+          floaters.add(g.emoji, undefined, undefined, true);
+          chat.push(profile?.pseudo ?? 'Toi', `a envoyé ${g.emoji} ${g.name} à ${focus.name}`, true);
+          toast.show(`${g.emoji} ${g.name} envoyé à ${focus.name} !`);
+        }}
+        onApplaud={() => {
+          if (!focus) return;
+          tap();
+          for (let k = 0; k < 5; k++) setTimeout(() => floaters.add('👏', width / 2 - 60 + Math.random() * 120, chatY.current + 30), k * 110);
+          chat.push(profile?.pseudo ?? 'Toi', `👏 applaudit ${focus.name}`, true);
+        }}
+      />
       <Toast text={toast.text} top={T + 110} />
     </View>
   );
@@ -1591,7 +1817,19 @@ function Cover({ top, children }: { top: number; children: React.ReactNode }) {
 }
 
 // Au lancement : choisir le mode de jeu
-function ModePicker({ top, onTournament, onGroup, onClose }: { top: number; onTournament: () => void; onGroup: () => void; onClose: () => void }) {
+function ModePicker({
+  top,
+  onTournament,
+  onGroup,
+  onTraining,
+  onClose,
+}: {
+  top: number;
+  onTournament: () => void;
+  onGroup: () => void;
+  onTraining: () => void;
+  onClose: () => void;
+}) {
   return (
     <Cover top={top}>
       <Text style={styles.finalTitle}>Lance ton live</Text>
@@ -1616,9 +1854,129 @@ function ModePicker({ top, onTournament, onGroup, onClose }: { top: number; onTo
           <Ionicons name="chevron-forward" size={18} color={GOLD} />
         </View>
       </Pressable>
+      <Pressable onPress={onTraining}>
+        <View style={[styles.modeRow, styles.modeRowTrain]}>
+          <Text style={{ fontSize: 30 }}>🎯</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.modeTitle}>Entraînement</Text>
+            <Text style={styles.modeDesc}>Toi contre l’ordinateur, sans live. 6 épreuves pour t’entraîner.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={GOLD} />
+        </View>
+      </Pressable>
       <Pressable onPress={onClose} style={{ alignSelf: 'center', marginTop: 8, padding: 6 }}>
         <Text style={styles.quitText}>Annuler</Text>
       </Pressable>
+    </Cover>
+  );
+}
+
+// ── Choix du niveau (et des adversaires en entraînement) ──
+function LevelPicker({
+  top,
+  training,
+  level,
+  bots,
+  onLevel,
+  onGo,
+  onBack,
+}: {
+  top: number;
+  training: boolean;
+  level: Level;
+  bots: Player[];
+  onLevel: (l: Level) => void;
+  onGo: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <Cover top={top}>
+      <Text style={styles.finalTitle}>{training ? 'Entraînement' : 'Niveau du live'}</Text>
+      <Text style={styles.finalSub}>Choisis ton niveau</Text>
+      {(['facile', 'difficile', 'expert'] as Level[]).map((l) => (
+        <Pressable key={l} onPress={() => onLevel(l)}>
+          <View style={[styles.modeRow, level === l && styles.modeRowOn]}>
+            <Text style={{ fontSize: 26 }}>{LEVEL_INFO[l].emoji}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modeTitle}>{LEVEL_LABEL[l]}</Text>
+              <Text style={styles.modeDesc}>
+                Chrono : {DURS[l].L} s pour les lettres, {DURS[l].C} s pour les chiffres.
+                {training ? ` Adversaires : ${BOTS[l].map((b) => b.name).join(', ')}.` : ''}
+              </Text>
+            </View>
+            {level === l && <Ionicons name="checkmark-circle" size={22} color={GOLD} />}
+          </View>
+        </Pressable>
+      ))}
+      {training && (
+        <>
+          <Text style={styles.sectionTitle}>Tes adversaires</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 4 }}>
+            {bots.map((p) => (
+              <View key={p.id} style={{ alignItems: 'center', flex: 1 }}>
+                <Image source={p.photo} style={styles.upAv} />
+                <Text style={styles.upName} numberOfLines={1}>
+                  {p.name}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+      <Pressable onPress={onGo}>
+        <LinearGradient colors={goldGradient} style={styles.replay}>
+          <Ionicons name="play" size={18} color={INK} />
+          <Text style={styles.replayText}>{training ? 'Commencer l’entraînement' : 'Continuer'}</Text>
+        </LinearGradient>
+      </Pressable>
+      <Pressable onPress={onBack} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
+        <Text style={styles.quitText}>Retour</Text>
+      </Pressable>
+    </Cover>
+  );
+}
+
+function TrainEndCard({
+  o,
+  level,
+  top,
+  onReplay,
+  onLevel,
+  onClose,
+}: {
+  o: Overlay;
+  level: Level;
+  top: number;
+  onReplay: () => void;
+  onLevel: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, []);
+  const won = !!o.who.me;
+  return (
+    <Cover top={top}>
+      <Text style={{ fontSize: 44, textAlign: 'center' }}>{won ? '🏆' : '💪'}</Text>
+      <Text style={styles.finalTitle}>{won ? 'Tu as gagné !' : `${o.who.name} gagne l’entraînement`}</Text>
+      <Text style={styles.finalSub}>
+        Niveau {LEVEL_LABEL[level]} · {won ? 'Bravo, tu as battu l’ordinateur !' : 'Entraîne-toi encore, tu vas y arriver !'}
+      </Text>
+      <RankList ranking={o.ranking} highlight={o.who.id} />
+      <Pressable onPress={onReplay}>
+        <LinearGradient colors={goldGradient} style={styles.replay}>
+          <Ionicons name="refresh" size={18} color={INK} />
+          <Text style={styles.replayText}>Rejouer</Text>
+        </LinearGradient>
+      </Pressable>
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 12 }}>
+        <Pressable onPress={onLevel} style={{ padding: 6 }}>
+          <Text style={styles.quitText}>Changer de niveau</Text>
+        </Pressable>
+        <Pressable onPress={onClose} style={{ padding: 6 }}>
+          <Text style={styles.quitText}>Quitter</Text>
+        </Pressable>
+      </View>
     </Cover>
   );
 }
@@ -1665,7 +2023,9 @@ function CamCheck({ top, onReady, onBack }: { top: number; onReady: () => void; 
         )}
       </View>
       <Text style={styles.rulesText}>
-        {'• Mets-toi face à la lumière, le visage bien visible.\n• Tu peux couper ton micro ou retourner la caméra depuis ta case.\n• Pendant le chrono, les micros se coupent tout seuls.'}
+        {
+          '• Mets-toi face à la lumière, le visage bien visible.\n• Tu peux couper ton micro ou retourner la caméra depuis ta case.\n• Pendant le chrono, les micros se coupent tout seuls.'
+        }
       </Text>
       <Pressable onPress={onReady}>
         <LinearGradient colors={goldGradient} style={styles.replay}>
@@ -1702,7 +2062,9 @@ function SizePicker({ top, onPick, onBack }: { top: number; onPick: (n: number) 
       ))}
       <View style={styles.rulesBox}>
         <Text style={styles.rulesText}>
-          {'• Chaque table joue 2 lettres + 1 chiffres.\n• Classement : 1er 4 pts, 2e 3, 3e 2, 4e 1.\n• Après chaque ronde, les tables sont refaites d’après le classement.\n• Les 4 premiers jouent la grande finale (égalité : le mieux classé gagne).'}
+          {
+            '• Chaque table joue 2 lettres + 1 chiffres.\n• Classement : 1er 4 pts, 2e 3, 3e 2, 4e 1.\n• Après chaque ronde, les tables sont refaites d’après le classement.\n• Les 4 premiers jouent la grande finale (égalité : le mieux classé gagne).'
+          }
         </Text>
       </View>
       <Pressable onPress={onBack} style={{ alignSelf: 'center', marginTop: 8, padding: 6 }}>
@@ -1726,7 +2088,11 @@ function SignupCard({ top, size, players, onStart, onBack }: { top: number; size
           const p = players[i];
           return (
             <View key={i} style={styles.signCell}>
-              {p ? <Image source={p.photo} style={[styles.signAv, p.me && { borderColor: GOLD, borderWidth: 2.5 }]} /> : <View style={[styles.signAv, styles.signEmpty]} />}
+              {p ? (
+                <Image source={p.photo} style={[styles.signAv, p.me && { borderColor: GOLD, borderWidth: 2.5 }]} />
+              ) : (
+                <View style={[styles.signAv, styles.signEmpty]} />
+              )}
               <Text style={styles.signName} numberOfLines={1}>
                 {p ? nameOf(p) : ''}
               </Text>
@@ -2545,6 +2911,19 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.05)',
     marginBottom: 10,
   },
+  modeRowTrain: { borderColor: '#3DDC97', backgroundColor: 'rgba(61,220,151,0.1)' },
+  trainBadge: {
+    backgroundColor: 'rgba(61,220,151,0.18)',
+    borderWidth: 1,
+    borderColor: GREEN,
+    paddingHorizontal: 8,
+    height: 20,
+    borderRadius: 6,
+    justifyContent: 'center',
+  },
+  trainText: { color: '#7CF2B5', fontSize: 10.5, fontWeight: '900', letterSpacing: 0.5 },
+  trainBar: { alignItems: 'center', paddingTop: 8 },
+  trainBarText: { color: 'rgba(255,255,255,0.7)', fontSize: 12.5, fontWeight: '800' },
   modeRowOn: { borderColor: GOLD, backgroundColor: 'rgba(233,185,73,0.14)' },
   modeTitle: { color: '#fff', fontSize: 16, fontWeight: '900' },
   modeDesc: { color: 'rgba(255,255,255,0.75)', fontSize: 12.5, marginTop: 2, lineHeight: 17 },

@@ -31,6 +31,8 @@ La liste de mots de Lettres d'Or (`src/games/words.ts`) vient de [Lexique 3.83](
 
 - **Mot d'Or** : trouver le mot caché en 6 essais (vert = bien placée, jaune = mal placée, gris = absente). 4 joueurs jouent chacun leur tour, chacun son mot, de 4 à 9 lettres. Ceux qui trouvent passent au niveau suivant, les autres descendent ; le champion reste sur scène et 3 joueurs de la liste d'attente montent (sur invitation de l'hôte). Sons originaux dans `assets/sounds/motdor/`. Pour l'instant : joueurs simulés.
 
+- **Niveaux et entraînement** (les deux jeux) : au lancement, niveau Facile, Difficile ou Expert (Mot d'Or : mots plus ou moins rares et temps ; Lettres d'Or : chrono). Le mode **Entraînement** fait jouer contre l'ordinateur, sans live, avec 4 adversaires différents par niveau (`src/games/bots.ts`). Toucher la case d'un joueur ouvre sa fiche : cadeau, applaudir, profil (`src/games/PlayerSheet.tsx`).
+
 ## Caméras et micros (LiveKit)
 
 Les lives utilisent [LiveKit](https://livekit.io) (projet « Zembo Natif ») pour la vidéo en direct.
