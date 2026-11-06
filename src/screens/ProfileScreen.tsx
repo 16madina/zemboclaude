@@ -11,6 +11,7 @@ import { formatCount } from '../utils/format';
 import { VideoViewer } from '../components/VideoViewer';
 import { Sheet } from '../table/TableSheets';
 import { useSession } from '../lib/session';
+import { deletePost, useUserPosts } from '../post/posts';
 
 type Tab = 'posts' | 'private' | 'saved' | 'liked';
 const TABS: { key: Tab; icon: keyof typeof Ionicons.glyphMap; on: keyof typeof Ionicons.glyphMap }[] = [
@@ -20,13 +21,25 @@ const TABS: { key: Tab; icon: keyof typeof Ionicons.glyphMap; on: keyof typeof I
   { key: 'liked', icon: 'heart-outline', on: 'heart' },
 ];
 const LISTS: Record<Tab, Post[]> = { posts: MY_POSTS, private: [], saved: SAVED, liked: LIKED };
+const EMPTY: Partial<Record<Tab, { icon: keyof typeof Ionicons.glyphMap; title: string; sub: string }>> = {
+  posts: { icon: 'videocam-outline', title: 'Publie ta première vidéo', sub: 'Tes vidéos et tes photos apparaîtront ici et sur l’accueil.' },
+  private: { icon: 'lock-closed-outline', title: 'Tes vidéos privées', sub: 'Les vidéos que tu publies en privé apparaîtront ici, visibles par toi seule.' },
+};
 
 // Onglet Profil de l'utilisatrice connectée
-export function ProfileScreen({ onStartTable }: { onStartTable: () => void }) {
+export function ProfileScreen({ onStartTable, onPublish }: { onStartTable: () => void; onPublish: () => void }) {
   const { user, profile, guest } = useSession();
   // pas connecté : invitation à se connecter (comme TikTok)
   if (!user && !guest) return <SignedOut />;
-  return <ProfileView onStartTable={onStartTable} name={profile?.prenom || ME.name} handle={profile?.pseudo || ME.handle} />;
+  return (
+    <ProfileView
+      onStartTable={onStartTable}
+      onPublish={onPublish}
+      uid={user?.uid ?? null}
+      name={profile?.prenom || ME.name}
+      handle={profile?.pseudo || ME.handle}
+    />
+  );
 }
 
 function SignedOut() {
@@ -48,7 +61,20 @@ function SignedOut() {
   );
 }
 
-function ProfileView({ onStartTable, name, handle }: { onStartTable: () => void; name: string; handle: string }) {
+function ProfileView({
+  onStartTable,
+  onPublish,
+  uid,
+  name,
+  handle,
+}: {
+  onStartTable: () => void;
+  onPublish: () => void;
+  /** null en mode test : on montre les exemples */
+  uid: string | null;
+  name: string;
+  handle: string;
+}) {
   const { signOut, deleteAccount } = useSession();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -57,8 +83,19 @@ function ProfileView({ onStartTable, name, handle }: { onStartTable: () => void;
   const [menu, setMenu] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const list = LISTS[tab];
+  const mine = useUserPosts(uid);
+  // compte réel : seulement mes vraies publications
+  const list = tab === 'posts' && uid ? mine : LISTS[tab];
   const cell = (width - 2) / 3;
+  const askDelete = (p: Post) =>
+    Alert.alert('Supprimer cette publication ?', 'Elle disparaîtra de l’accueil et de ton profil.', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: () => deletePost(p).then(() => flash('Publication supprimée'), () => flash('Suppression impossible, réessaie')),
+      },
+    ]);
   const flash = (t: string) => {
     setToast(t);
     setTimeout(() => setToast(null), 1600);
@@ -162,14 +199,27 @@ function ProfileView({ onStartTable, name, handle }: { onStartTable: () => void;
         {/* grille de vidéos */}
         {list.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="lock-closed-outline" size={40} color={colors.textFaint} />
-            <Text style={styles.emptyTitle}>Tes vidéos privées</Text>
-            <Text style={styles.emptySub}>Les vidéos que tu publies en privé apparaîtront ici, visibles par toi seule.</Text>
+            <Ionicons name={(EMPTY[tab] ?? EMPTY.private)!.icon} size={40} color={colors.textFaint} />
+            <Text style={styles.emptyTitle}>{(EMPTY[tab] ?? EMPTY.private)!.title}</Text>
+            <Text style={styles.emptySub}>{(EMPTY[tab] ?? EMPTY.private)!.sub}</Text>
+            {tab === 'posts' && (
+              <Pressable onPress={onPublish} style={{ marginTop: 18 }}>
+                <LinearGradient colors={goldGradient} style={styles.emptyBtn}>
+                  <Ionicons name="add" size={18} color={colors.bg} />
+                  <Text style={styles.emptyBtnText}>Publier</Text>
+                </LinearGradient>
+              </Pressable>
+            )}
           </View>
         ) : (
           <View style={styles.grid}>
             {list.map((p, i) => (
-              <Pressable key={`${tab}-${p.id}`} onPress={() => setViewer(i)} style={{ width: cell, height: cell * 1.33 }}>
+              <Pressable
+                key={`${tab}-${p.id}`}
+                onPress={() => setViewer(i)}
+                onLongPress={p.uid && p.uid === uid ? () => askDelete(p) : undefined}
+                style={{ width: cell, height: cell * 1.33 }}
+              >
                 <Image source={thumbOf(p)} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
                 <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)']} style={styles.cellShade} />
                 {p.pinned && tab === 'posts' && (
@@ -178,7 +228,7 @@ function ProfileView({ onStartTable, name, handle }: { onStartTable: () => void;
                   </LinearGradient>
                 )}
                 <View style={styles.cellViews}>
-                  <Ionicons name="play-outline" size={13} color={colors.white} />
+                  <Ionicons name={p.kind === 'photo' ? 'image-outline' : 'play-outline'} size={13} color={colors.white} />
                   <Text style={styles.cellViewsText}>{formatCount(p.views ?? p.likes * 9)}</Text>
                 </View>
               </Pressable>
@@ -319,6 +369,8 @@ const styles = StyleSheet.create({
   cellViews: { position: 'absolute', left: 6, bottom: 5, flexDirection: 'row', alignItems: 'center', gap: 3 },
   cellViewsText: { color: colors.white, fontSize: 12, fontWeight: '700' },
   empty: { alignItems: 'center', paddingTop: 50, paddingHorizontal: 40 },
+  emptyBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 26, height: 44, borderRadius: 22 },
+  emptyBtnText: { color: colors.bg, fontSize: 15.5, fontWeight: '900' },
   emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '800', marginTop: 12 },
   emptySub: { color: colors.textDim, fontSize: 13, textAlign: 'center', marginTop: 6, lineHeight: 18 },
   toast: {

@@ -1,5 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme';
@@ -20,7 +21,17 @@ const BOTTOM: Option[] = [
 ];
 
 // Menu du bouton « + » : choisir le type de live à lancer
-export function CreateSheet({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (k: LoungeKind) => void }) {
+export function CreateSheet({
+  visible,
+  onClose,
+  onPick,
+  onPublish,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPick: (k: LoungeKind) => void;
+  onPublish: (k: 'video' | 'photo') => void;
+}) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const inner = width - 32;
@@ -34,7 +45,12 @@ export function CreateSheet({ visible, onClose, onPick }: { visible: boolean; on
         <Text style={styles.title}>
           Créer sur <Text style={{ color: colors.goldLight }}>Zembo</Text>
         </Text>
-        <Text style={styles.sub}>Choisis ton type de live</Text>
+        <Text style={styles.sub}>Publie sur l’accueil ou lance un live</Text>
+        <View style={styles.publishRow}>
+          <PublishButton icon="videocam" label="Vidéo" sub="60 s max" onPress={() => onPublish('video')} />
+          <PublishButton icon="image" label="Photo" sub="Galerie ou caméra" onPress={() => onPublish('photo')} />
+        </View>
+        <Text style={styles.section}>LANCER UN LIVE</Text>
         <View style={styles.row}>
           {TOP.map((o) => (
             <Card key={o.id} o={o} w={smallW} imageH={smallW * 0.82} small onPress={() => onPick(o.id)} />
@@ -47,6 +63,24 @@ export function CreateSheet({ visible, onClose, onPick }: { visible: boolean; on
         </View>
       </View>
     </Modal>
+  );
+}
+
+function PublishButton({ icon, label, sub, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; sub: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [{ flex: 1 }, pressed && { transform: [{ scale: 0.97 }], opacity: 0.9 }]}>
+      <LinearGradient colors={['#F6DF94', '#E9B949', '#B8862B']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.publish}>
+        <View style={styles.publishIcon}>
+          <Ionicons name={icon} size={22} color="#F3D27A" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.publishTitle}>{label}</Text>
+          <Text style={styles.publishSub} numberOfLines={1}>
+            {sub}
+          </Text>
+        </View>
+      </LinearGradient>
+    </Pressable>
   );
 }
 
@@ -80,8 +114,14 @@ const styles = StyleSheet.create({
   },
   grabber: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.3)', marginTop: 8 },
   title: { color: colors.text, fontSize: 24, fontWeight: '900', marginTop: 14 },
-  sub: { color: colors.textDim, fontSize: 14, marginTop: 2, marginBottom: 14 },
+  sub: { color: colors.textDim, fontSize: 14, marginTop: 2, marginBottom: 12 },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
+  publishRow: { flexDirection: 'row', gap: 10 },
+  publish: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 62, borderRadius: 18, paddingHorizontal: 12 },
+  publishIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1E1D24', alignItems: 'center', justifyContent: 'center' },
+  publishTitle: { color: '#1A1408', fontSize: 17, fontWeight: '900' },
+  publishSub: { color: 'rgba(26,20,8,0.75)', fontSize: 11.5, fontWeight: '700' },
+  section: { color: colors.textDim, fontSize: 12, fontWeight: '900', letterSpacing: 1.5, marginTop: 16, marginBottom: 8 },
   card: {
     borderRadius: 18,
     overflow: 'hidden',

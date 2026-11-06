@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { colors } from '../theme';
 import { EXPLORE_FEED, FEED, FOLLOWING_FEED, type Post } from '../data/feed';
@@ -7,11 +7,11 @@ import { TopTabs, type FeedTab } from '../components/TopTabs';
 import { CommentsSheet } from '../components/CommentsSheet';
 import { ShareSheet } from '../components/ShareSheet';
 import { LiveScreen } from './LiveScreen';
+import { useFeedPosts } from '../post/posts';
 
-const FEEDS: Record<FeedTab, Post[]> = { foryou: FEED, following: FOLLOWING_FEED, explore: EXPLORE_FEED };
 
 // Page d'accueil : vidéos plein écran qui défilent verticalement
-export function HomeScreen({ focused }: { focused: boolean }) {
+export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop?: number }) {
   const [tab, setTab] = useState<FeedTab>('foryou');
   const [height, setHeight] = useState(0);
   const [active, setActive] = useState(0);
@@ -19,7 +19,21 @@ export function HomeScreen({ focused }: { focused: boolean }) {
   const [shareFor, setShareFor] = useState<Post | null>(null);
   const [live, setLive] = useState<Post | null>(null);
 
-  const data = FEEDS[tab];
+  const real = useFeedPosts();
+  const listRef = useRef<FlatList<Post>>(null);
+  // les vraies publications des membres passent en premier, puis les exemples (retirés avant le lancement)
+  const data = useMemo(
+    () => (tab === 'foryou' ? [...real, ...FEED] : tab === 'explore' ? [...real, ...EXPLORE_FEED] : FOLLOWING_FEED),
+    [tab, real],
+  );
+
+  // après une publication : onglet Pour toi, tout en haut
+  useEffect(() => {
+    if (!jumpTop) return;
+    setTab('foryou');
+    setActive(0);
+    requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
+  }, [jumpTop]);
   const playing = focused && !live;
 
   const changeTab = (t: FeedTab) => {
@@ -41,6 +55,7 @@ export function HomeScreen({ focused }: { focused: boolean }) {
     <View style={styles.root} onLayout={(e) => setHeight(Math.round(e.nativeEvent.layout.height))}>
       {height > 0 && (
         <FlatList
+          ref={listRef}
           key={tab}
           data={data}
           keyExtractor={(p) => `${tab}-${p.id}`}

@@ -3,6 +3,7 @@ import { Animated, Easing, Pressable, StyleSheet, View, GestureResponderEvent } 
 import { useVideoPlayer, VideoView, type VideoPlayer } from 'expo-video';
 import { useEvent } from 'expo';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors } from '../theme';
@@ -23,7 +24,8 @@ type Heart = { id: number; x: number; y: number; rot: number };
 
 // Une vidéo plein écran du fil
 export const VideoPost = memo(function VideoPost({ post, height, isActive, onComments, onShare, onOpenLive }: Props) {
-  const player = useVideoPlayer(post.video, (p) => {
+  const isPhoto = post.kind === 'photo';
+  const player = useVideoPlayer(isPhoto ? null : post.video, (p) => {
     p.loop = true;
     p.timeUpdateEventInterval = 0.1;
   });
@@ -85,13 +87,21 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
     lastTap.current = now;
     tapTimer.current = setTimeout(() => {
       if (isLive) onOpenLive(post);
-      else setPaused((p) => !p);
+      else if (!isPhoto) setPaused((p) => !p);
     }, 280);
   };
 
   return (
     <View style={[styles.container, { height }]}>
-      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
+      {isPhoto ? (
+        <>
+          {/* fond flou + photo entière */}
+          <Image source={post.thumb ?? post.image} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={30} />
+          <Image source={post.image} placeholder={post.thumb} style={StyleSheet.absoluteFill} contentFit="contain" transition={150} />
+        </>
+      ) : (
+        <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
+      )}
 
       <LinearGradient colors={['rgba(0,0,0,0.45)', 'transparent']} style={styles.topShade} pointerEvents="none" />
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={styles.bottomShade} pointerEvents="none" />
@@ -121,7 +131,7 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
         onAvatar={isLive ? () => onOpenLive(post) : undefined}
       />
 
-      {!isLive && <ProgressBar player={player} paused={paused} />}
+      {!isLive && !isPhoto && <ProgressBar player={player} paused={paused} />}
     </View>
   );
 });

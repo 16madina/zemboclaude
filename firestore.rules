@@ -58,6 +58,31 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    // Publications (vidéos et photos) : visibles par tous, chacun ne publie et ne supprime que les siennes.
+    // Les compteurs (j'aime, commentaires…) partent de 0 ; l'auteur peut seulement modifier sa légende.
+    match /posts/{id} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.kind in ['video', 'photo']
+        && request.resource.data.url is string
+        && request.resource.data.url.matches('https://firebasestorage.googleapis.com/.*')
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 300
+        && request.resource.data.hashtags is list
+        && request.resource.data.hashtags.size() <= 10
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.likes == 0
+        && request.resource.data.comments == 0
+        && request.resource.data.shares == 0
+        && request.resource.data.saves == 0;
+      allow update: if isMe(resource.data.uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['caption', 'hashtags'])
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 300;
+      allow delete: if isMe(resource.data.uid);
+    }
+
     // Tout le reste est fermé par défaut
     match /{document=**} {
       allow read, write: if false;

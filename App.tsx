@@ -22,6 +22,8 @@ import { MicroOuvert } from './src/talk/MicroOuvert';
 import type { TalkFormat } from './src/talk/TalkShowPicker';
 import { LettresDor } from './src/games/LettresDor';
 import { MotDor } from './src/games/MotDor';
+import { PublishScreen } from './src/post/PublishScreen';
+import type { MediaKind } from './src/post/posts';
 
 export default function App() {
   return (
@@ -48,6 +50,8 @@ function Main() {
   const [talk, setTalk] = useState<TalkFormat | null>(null);
   const [gameOpen, setGameOpen] = useState(false);
   const [motOpen, setMotOpen] = useState(false);
+  const [publish, setPublish] = useState<MediaKind | null>(null);
+  const [homeTop, setHomeTop] = useState(0);
   // un onglet visité reste monté pour garder sa position et son état
   const [visited, setVisited] = useState<Record<string, boolean>>({ home: true });
   const onUnread = useCallback((n: number) => setInboxBadge(n), []);
@@ -66,7 +70,10 @@ function Main() {
       <View style={styles.root}>
         <View style={styles.content}>
           {/* L'accueil reste monté pour garder la position dans le fil */}
-          <HomeScreen focused={tab === 'home' && !createOpen && !setupOpen && !table && !worldOpen && !talkOpen && !talk && !gameOpen && !motOpen} />
+          <HomeScreen
+            focused={tab === 'home' && !createOpen && !setupOpen && !table && !worldOpen && !talkOpen && !talk && !gameOpen && !motOpen && !publish}
+            jumpTop={homeTop}
+          />
           {visited.discover && (
             <View style={page('discover')}>
               <DiscoverScreen />
@@ -78,7 +85,10 @@ function Main() {
           </View>
           {visited.profile && (
             <View style={page('profile')}>
-              <ProfileScreen onStartTable={() => requireAuth('Connecte-toi pour lancer ta Zembo Table.', () => setSetupOpen(true))} />
+              <ProfileScreen
+                onStartTable={() => requireAuth('Connecte-toi pour lancer ta Zembo Table.', () => setSetupOpen(true))}
+                onPublish={() => requireAuth('Connecte-toi pour publier sur Zembo.', () => setPublish('video'))}
+              />
             </View>
           )}
         </View>
@@ -87,6 +97,10 @@ function Main() {
       <CreateSheet
         visible={createOpen}
         onClose={() => setCreateOpen(false)}
+        onPublish={(k) => {
+          setCreateOpen(false);
+          setTimeout(() => setPublish(k), 350);
+        }}
         onPick={(kind) => {
           setCreateOpen(false);
           if (kind === 'world') setTimeout(() => setWorldOpen(true), 250);
@@ -118,6 +132,17 @@ function Main() {
       <MicroOuvert open={talk === 'open-mic'} onClose={() => setTalk(null)} />
       <LettresDor open={gameOpen} onClose={() => setGameOpen(false)} />
       <MotDor open={motOpen} onClose={() => setMotOpen(false)} />
+      <PublishScreen
+        kind={publish}
+        onClose={() => setPublish(null)}
+        onPublished={() => {
+          setPublish(null);
+          // retour sur l'accueil, tout en haut : la nouvelle publication est la première
+          setVisited((v) => ({ ...v, home: true }));
+          setTab('home');
+          setHomeTop((n) => n + 1);
+        }}
+      />
     </>
   );
 }

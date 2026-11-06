@@ -9,8 +9,15 @@ export type User = {
 
 export type Post = {
   id: string;
-  kind: 'video' | 'live';
+  kind: 'video' | 'live' | 'photo';
   video: string;
+  /** photo publiée (kind = 'photo') */
+  image?: string;
+  /** miniature envoyée avec la publication */
+  thumb?: string;
+  /** auteur (publications réelles) */
+  uid?: string;
+  createdAt?: number;
   user: User;
   caption: string;
   hashtags: string[];
@@ -232,6 +239,8 @@ export const CONTACTS = [
 
 // Miniature d'une vidéo Mixkit (même identifiant que la vidéo)
 export function thumbOf(post: Post) {
+  if (post.thumb) return post.thumb;
+  if (post.image) return post.image;
   const id = post.video.match(/videos\/(\d+)\//)?.[1];
   return id ? `https://assets.mixkit.co/videos/${id}/${id}-thumb-360-0.jpg` : post.user.avatar;
 }

@@ -1,0 +1,24 @@
+rules_version = '2';
+
+// Règles de sécurité des fichiers (Firebase Storage) du projet « Zembo Claude ».
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Fichiers des publications : posts/{uid}/{id}/video.mp4 | photo.jpg | thumb.jpg
+    // Visibles par tous ; seul l'auteur envoie ou supprime les siens.
+    match /posts/{uid}/{id}/{file} {
+      allow read: if true;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && (
+          (file == 'video.mp4' && request.resource.contentType.matches('video/.*') && request.resource.size < 200 * 1024 * 1024)
+          || (file in ['photo.jpg', 'thumb.jpg'] && request.resource.contentType == 'image/jpeg' && request.resource.size < 15 * 1024 * 1024)
+        );
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Tout le reste est fermé
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
