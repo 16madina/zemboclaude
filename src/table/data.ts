@@ -5,6 +5,9 @@ export type Seat = {
   name: string | null; // null = place libre
   you?: boolean;
   host?: boolean;
+  /** vraie personne (live réel) : identifiant Zembo */
+  uid?: string;
+  real?: boolean;
   shirt: string; // couleur du haut du joueur en 3D
 };
 
@@ -46,7 +49,7 @@ export const SPECTATORS = [
   'Amina', 'Théo', 'Rokia', 'Samir',
 ];
 
-export type ChatMsg = { id: string; name: string; time: string; text: string; gift?: boolean; system?: boolean };
+export type ChatMsg = { id: string; name: string; time: string; text: string; gift?: boolean; system?: boolean; real?: boolean; at?: number };
 
 export const CHAT0: ChatMsg[] = [
   { id: 'c0', name: 'Zembo', time: '', text: 'Bienvenue à la table ! Respect et bienveillance, chacun son tour de parole.', system: true },

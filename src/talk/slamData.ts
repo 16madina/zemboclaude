@@ -43,6 +43,8 @@ export type Slot = {
   sound: string | null;
   duration: SlamDuration;
   me?: boolean;
+  /** vraie personne (live réel) : on affiche son initiale */
+  real?: boolean;
   /** texte préparé : affiché façon karaoké pendant le passage. Sans texte → sous-titres en direct */
   lyrics?: string;
 };

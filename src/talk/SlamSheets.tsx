@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type ImageStyle, type StyleProp } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
+import { Initial } from '../live/LiveViewer';
 import { MOODS, SLAM_GIFTS, ZEM_AMOUNTS, avatarOf, fmtDur, moodOf, soundsFor, type SlamDuration, type Slot, type Sound } from './slamData';
 
 const mmss = (s: number) => `${String(Math.floor((s || 0) / 60)).padStart(2, '0')}:${String(Math.floor((s || 0) % 60)).padStart(2, '0')}`;
@@ -279,7 +280,8 @@ export function QueueDrawer({
   visible: boolean;
   onClose: () => void;
   hostMode: boolean;
-  onToggleHost: () => void;
+  /** absent : la vue est fixe (live réel) */
+  onToggleHost?: () => void;
   perf: Slot;
   queue: Slot[];
   requests: Slot[];
@@ -325,15 +327,16 @@ export function QueueDrawer({
         </View>
         <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} showsVerticalScrollIndicator={false}>
           <Pressable
+            disabled={!onToggleHost}
             onPress={() => {
               tap();
-              onToggleHost();
+              onToggleHost?.();
             }}
             style={styles.hostToggle}
           >
             <Ionicons name="ribbon" size={13} color={colors.gold} />
             <Text style={styles.hostText}>{hostMode ? 'Vue Hôte (modération active)' : 'Vue Spectateur'}</Text>
-            <Text style={styles.change}>changer</Text>
+            {!!onToggleHost && <Text style={styles.change}>changer</Text>}
           </Pressable>
 
           {hostMode && requests.length > 0 && (
@@ -342,7 +345,7 @@ export function QueueDrawer({
               {requests.map((r) => (
                 <View key={r.id} style={styles.reqCard}>
                   <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-                    <Image source={avatarOf(r.name)} style={styles.av32} />
+                    <Face s={r} style={styles.av32} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.name}>{r.name}</Text>
                       <Text style={styles.sub} numberOfLines={1}>
@@ -371,7 +374,7 @@ export function QueueDrawer({
 
           <Text style={styles.section}>SUR SCÈNE</Text>
           <View style={[styles.reqCard, { borderColor: 'rgba(212,175,55,0.5)', flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
-            <Image source={avatarOf(perf.name)} style={[styles.av38, { borderColor: colors.gold, borderWidth: 2 }]} />
+            <Face s={perf} style={[styles.av38, { borderColor: colors.gold, borderWidth: 2 }]} />
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{perf.name}</Text>
               <Text style={styles.sub} numberOfLines={1}>
@@ -390,7 +393,7 @@ export function QueueDrawer({
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 {hostMode && <Ionicons name="reorder-three" size={16} color={colors.textFaint} />}
                 <Text style={styles.pos}>{i + 1}</Text>
-                <Image source={avatarOf(q.name)} style={styles.av30} />
+                <Face s={q} style={styles.av30} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>
                     {q.name}
@@ -489,6 +492,13 @@ function IconBtn({ icon, onPress, danger }: { icon: keyof typeof Ionicons.glyphM
 }
 
 // ── Feuilles : partager, cadeaux, Zems, menu ──
+/** Photo d'une personne de la file (initiale dorée pour les vrais membres) */
+function Face({ s, style }: { s: Slot; style: StyleProp<ImageStyle> }) {
+  if (!s.real) return <Image source={avatarOf(s.name)} style={style} />;
+  const size = (StyleSheet.flatten(style)?.width as number) ?? 32;
+  return <Initial name={s.name} size={size} />;
+}
+
 export type SlamSheetKind = 'share' | 'gift' | 'zems' | 'menu' | null;
 
 export function SlamActionSheet({

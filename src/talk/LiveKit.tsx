@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { DEENA_PHOTO } from '../table/data';
+import { Initial } from '../live/LiveViewer';
 
 // Briques communes aux lives du Talk Show (Micro Ouvert)
 
@@ -40,7 +41,7 @@ export const faceOf = (name: string, size = 120): string | number => {
 };
 
 // ── Chat en direct ──
-export type LiveMsg = { id: number; user: string; text: string; tint: string; me?: boolean };
+export type LiveMsg = { id: number | string; user: string; text: string; tint: string; me?: boolean; real?: boolean };
 
 export function useLiveChat(initial: [string, string][], auto: [string, string][], every = 3200) {
   const seq = useRef(100);
@@ -70,7 +71,13 @@ export function LiveChat({ msgs, max = 7, style }: { msgs: LiveMsg[]; max?: numb
     <View style={[styles.chat, style]} pointerEvents="none">
       {shown.map((m, i) => (
         <View key={m.id} style={[styles.msg, { opacity: Math.max(0.25, 1 - (shown.length - 1 - i) * 0.13) }]}>
-          <Image source={faceOf(m.user, 60)} style={[styles.msgAv, m.me && { borderColor: colors.gold, borderWidth: 1.5 }]} />
+          {m.real ? (
+            <View style={styles.msgAv}>
+              <Initial name={m.user} size={styles.msgAv.width as number} />
+            </View>
+          ) : (
+            <Image source={faceOf(m.user, 60)} style={[styles.msgAv, m.me && { borderColor: colors.gold, borderWidth: 1.5 }]} />
+          )}
           <Text style={styles.msgText}>
             <Text style={{ color: m.tint, fontWeight: '800' }}>{m.user} </Text>
             {m.text}

@@ -46,6 +46,30 @@ exports.livekitToken = onCall({ region: 'europe-west1', secrets: [LIVEKIT_API_KE
   return { url: LIVEKIT_URL, token: await at.toJwt(), onStage, host: live.host === uid };
 });
 
+// Scène d'un live modifiée (lives/{salle}.stage) : les personnes qu'on fait monter reçoivent tout de suite
+// le droit d'envoyer caméra et micro ; celles qui descendent le perdent (sans avoir à se reconnecter).
+const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { RoomServiceClient } = require('livekit-server-sdk');
+
+exports.liveStageChanged = onDocumentUpdated(
+  { document: 'lives/{room}', region: 'europe-west1', secrets: [LIVEKIT_API_KEY, LIVEKIT_API_SECRET] },
+  async (e) => {
+    const ids = (d) => new Set((Array.isArray(d?.stage) ? d.stage : []).filter((x) => typeof x === 'string' && x));
+    const before = ids(e.data?.before.data());
+    const after = ids(e.data?.after.data());
+    const host = e.data?.after.data()?.host;
+    const up = [...after].filter((x) => !before.has(x));
+    const down = [...before].filter((x) => !after.has(x) && x !== host);
+    if (!up.length && !down.length) return;
+    const svc = new RoomServiceClient(LIVEKIT_URL.replace('wss://', 'https://'), LIVEKIT_API_KEY.value(), LIVEKIT_API_SECRET.value());
+    const set = (identity, canPublish) =>
+      svc
+        .updateParticipant(e.params.room, identity, { permission: { canPublish, canSubscribe: true, canPublishData: true } })
+        .catch(() => {}); // pas encore connecté : il recevra le bon droit à sa connexion
+    await Promise.all([...up.map((x) => set(x, true)), ...down.map((x) => set(x, false))]);
+  },
+);
+
 // ── Compteurs (j'aime, commentaires, enregistrements, abonnés) ──
 // L'app écrit seulement « qui aime quoi » ; le serveur tient les chiffres à jour,
 // pour qu'ils ne puissent pas être truqués depuis un téléphone.

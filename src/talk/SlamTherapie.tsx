@@ -21,8 +21,7 @@ import { colors, goldGradient } from '../theme';
 import { AUTO, CHAT0, QUEUE0, REQUESTS0, SLAM_STAGE, STAGE0, TINTS, avatarOf, fmtDur, moodOf, type SlamMsg, type Slot } from './slamData';
 import { LyricsPanel } from './LyricsPanel';
 import { useSession } from '../lib/session';
-import { useHostOnAir } from '../live/onair';
-import { HostCam } from '../live/HostCam';
+import { SlamReal } from './SlamReal';
 import { melodyFile } from './melodies';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { MAGENTA, QueueDrawer, RequestSheet, SlamActionSheet, tap, type SlamRequest, type SlamSheetKind } from './SlamSheets';
@@ -41,16 +40,18 @@ export function SlamTherapie({ open, onClose }: { open: boolean; onClose: () => 
       useNativeDriver: true,
     }).start(({ finished }) => finished && !open && setMounted(false));
   }, [open, height, y]);
+  const { user } = useSession();
   if (!mounted) return null;
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { zIndex: 55, backgroundColor: '#000', transform: [{ translateY: y }] }]}>
-      <SlamLive onClose={onClose} />
+      {/* live réel dès qu'on est connecté ; sinon (mode test sans compte) la démonstration */}
+      {user ? <SlamReal onClose={onClose} /> : <SlamLive onClose={onClose} />}
     </Animated.View>
   );
 }
 
 // décompte avant chaque passage : à 0, chrono + mélodie + micro + paroles démarrent ensemble
-const COUNTDOWN = 10;
+export const COUNTDOWN = 10;
 
 type Heart = { id: number; x: number; y: number; v: Animated.Value };
 
@@ -229,22 +230,11 @@ function SlamLive({ onClose }: { onClose: () => void }) {
     }, 1800);
   };
 
-  // le live apparaît sur l'accueil ; les messages des spectateurs arrivent dans le chat
-  const { profile, user } = useSession();
-  const onAir = useHostOnAir('slam', {
-    active: !!user,
-    title: 'Des mots pour guérir',
-    pseudo: profile?.pseudo,
-    name: [profile?.prenom, profile?.nom].filter(Boolean).join(' '),
-    onMessage: (m) => push(m.pseudo, m.text),
-  });
-
   const send = () => {
     const t = draft.trim();
     if (!t) return;
     tap();
     push('Deena', t, true);
-    onAir.send(t);
     setDraft('');
   };
 
@@ -402,9 +392,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
         <TimerRing ratio={ratio} urgent={urgent} label={`${mm}:${ss}`} sub={`/ ${fmtDur(perf.duration)}`} />
       </View>
 
-      {/* vignette de l'hôte : ta vraie caméra quand tu es connecté·e */}
-      <HostCam room={onAir.room} viewers={onAir.viewers} name={profile?.pseudo} style={{ top: T + 182, right: 10 }} />
-      {!onAir.room && (
+      {/* vignette de l'hôte (caméra) */}
       <View style={[styles.pip, { top: T + 196 }]} pointerEvents="none">
         <Image source={avatarOf('Deena', 160)} style={styles.pipImg} />
         <View style={styles.cam}>
@@ -414,7 +402,6 @@ function SlamLive({ onClose }: { onClose: () => void }) {
         <Text style={styles.pipName}>👑 Deena</Text>
         <Text style={styles.pipRole}>Hôte</Text>
       </View>
-      )}
 
       {/* Mode Paroles : le texte de la personne au mic, à l'écran, façon karaoké */}
       {!thanks && !nextUp && (
@@ -684,7 +671,7 @@ function SlamLive({ onClose }: { onClose: () => void }) {
 }
 
 // Chrono circulaire (dessiné en natif)
-function TimerRing({ ratio, urgent, label, sub }: { ratio: number; urgent: boolean; label: string; sub: string }) {
+export function TimerRing({ ratio, urgent, label, sub }: { ratio: number; urgent: boolean; label: string; sub: string }) {
   const size = 84;
   const circle = useMemo(() => {
     // cercle qui part du haut, dans le sens des aiguilles d'une montre
@@ -705,7 +692,7 @@ function TimerRing({ ratio, urgent, label, sub }: { ratio: number; urgent: boole
   );
 }
 
-function Action({
+export function Action({
   icon,
   label,
   onPress,
@@ -734,7 +721,7 @@ function Action({
   );
 }
 
-function FadeIn({ style, children, pointerEvents }: { style: object; children: React.ReactNode; pointerEvents?: 'none' | 'auto' }) {
+export function FadeIn({ style, children, pointerEvents }: { style: object; children: React.ReactNode; pointerEvents?: 'none' | 'auto' }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(v, { toValue: 1, duration: 220, useNativeDriver: true }).start();
@@ -746,7 +733,7 @@ function FadeIn({ style, children, pointerEvents }: { style: object; children: R
   );
 }
 
-function CountNumber({ value }: { value: string }) {
+export function CountNumber({ value }: { value: string }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(v, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 14 }).start();
@@ -756,7 +743,7 @@ function CountNumber({ value }: { value: string }) {
   );
 }
 
-function GiftFly({ emoji }: { emoji: string }) {
+export function GiftFly({ emoji }: { emoji: string }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(v, { toValue: 1, duration: 1700, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
@@ -781,7 +768,7 @@ function GiftFly({ emoji }: { emoji: string }) {
   );
 }
 
-function BottomCard({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+export function BottomCard({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -804,7 +791,7 @@ function BottomCard({ onClose, children }: { onClose: () => void; children: Reac
   );
 }
 
-const styles = StyleSheet.create({
+export const slamStyles = StyleSheet.create({
   shade: { position: 'absolute', left: 0, right: 0 },
   lyrics: { position: 'absolute', left: 12, right: 84 },
   header: { position: 'absolute', left: 12, right: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -960,3 +947,4 @@ const styles = StyleSheet.create({
   },
   toastText: { color: colors.text, fontSize: 13, fontWeight: '700' },
 });
+const styles = slamStyles;

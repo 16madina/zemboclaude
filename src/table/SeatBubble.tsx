@@ -6,6 +6,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors, goldGradient } from '../theme';
 import { photoUrl, type Seat } from './data';
 import type { Projected } from './layout';
+import { CameraFeed, type TrackRef } from '../live/media';
+import { Initial } from '../live/LiveViewer';
 
 type Props = {
   seat: Seat;
@@ -15,10 +17,12 @@ type Props = {
   muted: boolean;
   onPress: () => void;
   onMic: () => void;
+  /** caméra en direct de la personne (live réel) */
+  camera?: TrackRef | null;
 };
 
-// Bulle vidéo d'une personne, posée sur sa tête en 3D (plus tard : sa caméra en direct)
-export function SeatBubble({ seat, p, base, speaking, muted, onPress, onMic }: Props) {
+// Bulle vidéo d'une personne, posée sur sa tête en 3D : sa caméra en direct (live réel) ou sa photo
+export function SeatBubble({ seat, p, base, speaking, muted, onPress, onMic, camera }: Props) {
   const size = Math.max(40, Math.min(78, base * p.scale));
   const pulse = useRef(new Animated.Value(0)).current;
 
@@ -60,7 +64,15 @@ export function SeatBubble({ seat, p, base, speaking, muted, onPress, onMic }: P
         )}
         {seat.name ? (
           <LinearGradient colors={goldGradient} style={[styles.border, { width: size, height: size, borderRadius: size / 2 }]}>
-            <Image source={photoUrl(seat.name)} style={{ width: size - 5, height: size - 5, borderRadius: (size - 5) / 2 }} />
+            {camera ? (
+              <View style={{ width: size - 5, height: size - 5, borderRadius: (size - 5) / 2, overflow: 'hidden', backgroundColor: '#000' }}>
+                <CameraFeed trackRef={camera} mirror={seat.you} style={{ width: size - 5, height: size - 5 }} />
+              </View>
+            ) : seat.real ? (
+              <Initial name={seat.name} size={size - 5} />
+            ) : (
+              <Image source={photoUrl(seat.name)} style={{ width: size - 5, height: size - 5, borderRadius: (size - 5) / 2 }} />
+            )}
             {speaking && <TalkBars />}
           </LinearGradient>
         ) : (

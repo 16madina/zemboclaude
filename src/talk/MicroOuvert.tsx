@@ -26,13 +26,12 @@ import {
   type Gift,
 } from './LiveKit';
 import { useSession } from '../lib/session';
-import { useHostOnAir } from '../live/onair';
-import { HostCam } from '../live/HostCam';
+import { MicroReal } from './MicroOuvertReal';
 
 // Micro Ouvert : Deena anime, jusqu'à 4 invités montent sur scène (repris de zembolounge)
 const HOST = require('../../assets/talk/micro-host.jpg');
 const HOST_FACE = require('../../assets/talk/micro-face.jpg'); // la personne à l'écran
-const SUBJECT = "Amour, amitié ou argent : qu'est-ce qui rend vraiment heureux ?";
+export const SUBJECT = "Amour, amitié ou argent : qu'est-ce qui rend vraiment heureux ?";
 
 type Guest = { slot: 1 | 2 | 3 | 4; name: string | null; mic: boolean; hand: boolean; speaking: boolean };
 type Role = 'host' | 'guest' | 'viewer';
@@ -56,7 +55,7 @@ const AUTO: [string, string][] = [
   ['Emma', 'Deena gère le débat 👑'],
   ['Karim', "L'argent ne fait pas tout…"],
 ];
-const GIFTS: Gift[] = [
+export const GIFTS: Gift[] = [
   { name: 'Rose', emoji: '🌹', cost: 5 },
   { name: 'Cœur', emoji: '💖', cost: 10 },
   { name: "Micro d'or", emoji: '🎤', cost: 30 },
@@ -64,14 +63,16 @@ const GIFTS: Gift[] = [
   { name: 'Feu', emoji: '🔥', cost: 15 },
   { name: 'Couronne', emoji: '👑', cost: 99 },
 ];
-const REACTIONS = ['❤️', '🔥', '👏', '😂', '🙏', '✨', '💯', '🎤', '😮', '👑'];
+export const REACTIONS = ['❤️', '🔥', '👏', '😂', '🙏', '✨', '💯', '🎤', '😮', '👑'];
 
-const clock = (s: number) => [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60].map((n) => String(n).padStart(2, '0')).join(':');
+export const clock = (s: number) => [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60].map((n) => String(n).padStart(2, '0')).join(':');
 
 export function MicroOuvert({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { user } = useSession();
   return (
     <LiveSlide open={open}>
-      <MicroLive onClose={onClose} />
+      {/* live réel dès qu'on est connecté ; sinon (mode test sans compte) la démonstration */}
+      {user ? <MicroReal onClose={onClose} /> : <MicroLive onClose={onClose} />}
     </LiveSlide>
   );
 }
@@ -86,15 +87,6 @@ function MicroLive({ onClose }: { onClose: () => void }) {
   const input = useRef<React.ComponentRef<typeof TextInput>>(null);
 
   const [role, setRole] = useState<Role>('host');
-  // quand tu es l'hôte, le live apparaît sur l'accueil et les messages des spectateurs arrivent ici
-  const { profile, user } = useSession();
-  const onAir = useHostOnAir('openmic', {
-    active: !!user && role === 'host',
-    title: SUBJECT,
-    pseudo: profile?.pseudo,
-    name: [profile?.prenom, profile?.nom].filter(Boolean).join(' '),
-    onMessage: (m) => chat.push(m.pseudo, m.text),
-  });
   const [guests, setGuests] = useState<Guest[]>([
     { slot: 1, name: 'Malik', mic: true, hand: false, speaking: true },
     { slot: 2, name: 'Aïssatou', mic: false, hand: true, speaking: false },
@@ -235,9 +227,6 @@ function MicroLive({ onClose }: { onClose: () => void }) {
         </View>
       </View>
 
-      {/* ta caméra d'hôte, telle que la voient les spectateurs de l'accueil */}
-      <HostCam room={onAir.room} viewers={onAir.viewers} name={profile?.pseudo} style={{ top: T + 160, left: 14 }} controls="right" />
-
       {/* en-tête */}
       <View style={[styles.head, { top: T + 4 }]}>
         <LinearGradient colors={goldGradient} style={styles.z}>
@@ -347,10 +336,7 @@ function MicroLive({ onClose }: { onClose: () => void }) {
         <LiveChat msgs={chat.msgs} max={5} />
         <ChatInput
           ref={input}
-          onSend={(t) => {
-            chat.push('Deena', t, true);
-            onAir.send(t);
-          }}
+          onSend={(t) => chat.push('Deena', t, true)}
         />
         {role !== 'viewer' && (
           <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom - 18, 6) }]}>
@@ -536,7 +522,7 @@ function MicroLive({ onClose }: { onClose: () => void }) {
   );
 }
 
-function BarItem({ icon, label, onPress, off }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; off?: boolean }) {
+export function BarItem({ icon, label, onPress, off }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; off?: boolean }) {
   return (
     <Pressable
       onPress={() => {
@@ -554,7 +540,7 @@ function BarItem({ icon, label, onPress, off }: { icon: keyof typeof Ionicons.gl
 }
 
 // Main levée qui balance
-function Hand() {
+export function Hand() {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
@@ -572,7 +558,7 @@ function Hand() {
 }
 
 // Petites barres de son quand quelqu'un parle
-function Wave() {
+export function Wave() {
   const bars = useRef([0, 1, 2, 3, 4].map(() => new Animated.Value(0.3))).current;
   useEffect(() => {
     const loops = bars.map((b, i) =>
@@ -595,7 +581,7 @@ function Wave() {
   );
 }
 
-const styles = StyleSheet.create({
+export const microStyles = StyleSheet.create({
   head: { position: 'absolute', left: 12, right: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   z: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   zText: { color: '#1D1405', fontSize: 17, fontWeight: '900' },
@@ -639,3 +625,4 @@ const styles = StyleSheet.create({
   reqBtns: { flexDirection: 'row', gap: 8, marginTop: 10 },
   emptyAv: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(212,175,55,0.5)' },
 });
+const styles = microStyles;

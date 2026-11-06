@@ -5,8 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
-import { GIFTS, SPECTATORS, photoUrl } from './data';
+import { GIFTS, photoUrl } from './data';
 import type { TableLive } from './useTableLive';
+import { Initial } from '../live/LiveViewer';
 
 // Panneaux qui montent du bas : spectateurs, demandes, cadeaux, menu d'un invité
 
@@ -27,8 +28,15 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
 export function SpectatorsSheet({ live, visible, onClose }: { live: TableLive; visible: boolean; onClose: () => void }) {
   return (
     <Sheet visible={visible} onClose={onClose} title={`SPECTATEURS · ${live.viewers}`}>
+      {!live.spectators && (
+        <Text style={styles.hint}>
+          {live.viewers > 0
+            ? `${live.viewers} personne${live.viewers > 1 ? 's' : ''} regarde${live.viewers > 1 ? 'nt' : ''} ta table en ce moment.`
+            : 'Personne ne regarde encore. Ta table est visible sur l’accueil de Zembo.'}
+        </Text>
+      )}
       <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={styles.grid}>
-        {SPECTATORS.map((s) => (
+        {(live.spectators ?? []).map((s) => (
           <View key={s} style={styles.spec}>
             <Image source={photoUrl(s, 96)} style={styles.specAvatar} />
             <Text style={styles.specName} numberOfLines={1}>
@@ -50,17 +58,23 @@ export function QueueSheet({ live, visible, onClose }: { live: TableLive; visibl
           : 'La table est complète. Fais descendre quelqu’un pour libérer une place.'}
       </Text>
       <ScrollView style={{ maxHeight: 340 }} contentContainerStyle={{ gap: 8, paddingTop: 10 }}>
-        {live.queue.map((name) => (
-          <View key={name} style={styles.queueRow}>
-            <Image source={photoUrl(name)} style={styles.queueAvatar} />
+        {live.queue.map((q) => (
+          <View key={q.id} style={styles.queueRow}>
+            {q.real ? (
+              <View style={styles.queueAvatar}>
+                <Initial name={q.name} size={40} />
+              </View>
+            ) : (
+              <Image source={photoUrl(q.name)} style={styles.queueAvatar} />
+            )}
             <View style={{ flex: 1 }}>
-              <Text style={styles.queueName}>{name}</Text>
+              <Text style={styles.queueName}>{q.name}</Text>
               <Text style={styles.queueSub}>veut monter à la table</Text>
             </View>
-            <Pressable onPress={() => live.decline(name)} style={styles.declineBtn} hitSlop={6}>
+            <Pressable onPress={() => live.decline(q.id)} style={styles.declineBtn} hitSlop={6}>
               <Ionicons name="close" size={16} color={colors.textDim} />
             </Pressable>
-            <Pressable onPress={() => live.accept(name)} disabled={live.freeSeats === 0} style={{ opacity: live.freeSeats ? 1 : 0.4 }}>
+            <Pressable onPress={() => live.accept(q.id)} disabled={live.freeSeats === 0} style={{ opacity: live.freeSeats ? 1 : 0.4 }}>
               <LinearGradient colors={goldGradient} style={styles.smallCta}>
                 <Text style={styles.smallCtaText}>Accepter</Text>
               </LinearGradient>
@@ -108,27 +122,33 @@ export function GiftSheet({ live, visible, onClose, onGift }: { live: TableLive;
 
 export function SeatMenuSheet({ live, seatN, onClose, onQuit }: { live: TableLive; seatN: number | null; onClose: () => void; onQuit: () => void }) {
   const seat = live.seats.find((s) => s.n === seatN);
+  const host = live.role === 'host' || live.role === 'demo';
+  const run = (fn?: () => void) => () => {
+    fn?.();
+    onClose();
+  };
+  const mine = !!seat?.you;
   return (
     <Sheet visible={!!seat} onClose={onClose} title={seat?.name ? `${seat.name}${seat.host ? ' — ★ HÔTE' : ''}` : ''}>
-      <MenuRow label="Voir le profil" onPress={onClose} />
-      <MenuRow
-        label={seat && live.isMuted(seat) ? 'Réactiver le micro' : 'Couper le micro'}
-        onPress={() => {
-          if (seat) live.toggleMute(seat.n);
-          onClose();
-        }}
-      />
-      {seat && !seat.host && (
-        <MenuRow
-          label="Faire descendre de la table"
-          onPress={() => {
-            live.removeFromTable(seat.n);
-            onClose();
-          }}
-        />
+      {/* ma place : caméra, micro */}
+      {mine && live.real && (
+        <>
+          <MenuRow label={live.isMuted(seat!) ? 'Rallumer mon micro' : 'Couper mon micro'} onPress={run(() => live.toggleMute(seat!.n))} />
+          <MenuRow label={live.myCam ? 'Couper ma caméra' : 'Rallumer ma caméra'} onPress={run(live.toggleCam)} />
+          <MenuRow label="Retourner la caméra" onPress={run(live.flip)} />
+        </>
       )}
-      <MenuRow label="Signaler" danger onPress={onClose} />
-      {seat?.you && <MenuRow label="Quitter la table" dim onPress={onQuit} />}
+      {!mine && <MenuRow label="Voir le profil" onPress={onClose} />}
+      {/* l'hôte gère les invités */}
+      {host && seat && (!mine || !live.real) && (
+        <MenuRow label={live.isMuted(seat) ? 'Réactiver le micro' : 'Couper le micro'} onPress={run(() => live.toggleMute(seat.n))} />
+      )}
+      {host && seat && !seat.host && (
+        <MenuRow label="Faire descendre de la table" onPress={run(() => live.removeFromTable(seat.n))} />
+      )}
+      {!mine && <MenuRow label="Signaler" danger onPress={onClose} />}
+      {mine && live.role === 'stage' && <MenuRow label="Descendre de la table" dim onPress={run(live.leave)} />}
+      {mine && host && <MenuRow label="Quitter la table" dim onPress={onQuit} />}
     </Sheet>
   );
 }

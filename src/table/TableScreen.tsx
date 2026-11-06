@@ -4,6 +4,7 @@ import {
   Easing,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -15,17 +16,18 @@ import {
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { EMOJIS, REACTIONS, photoUrl, type ChatMsg, type TableConfig } from './data';
 import { seatPoints, tableGeom } from './layout';
 import { TableCanvas } from './TableCanvas';
 import { SeatBubble } from './SeatBubble';
 import { useTableLive, type TableLive } from './useTableLive';
+import { useRealTable } from './useRealTable';
 import { GiftSheet, QueueSheet, SeatMenuSheet, SpectatorsSheet } from './TableSheets';
 import { useSession } from '../lib/session';
-import { useHostOnAir } from '../live/onair';
-import { HostCam } from '../live/HostCam';
+import type { OnAirLive } from '../live/onair';
+import { Initial } from '../live/LiveViewer';
 
 // Affiché par-dessus l'app, avec une glissade depuis le bas
 export function TableScreen({ config, onClose }: { config: TableConfig | null; onClose: () => void }) {
@@ -54,8 +56,35 @@ export function TableScreen({ config, onClose }: { config: TableConfig | null; o
 const BUBBLE: Record<number, number> = { 2: 84, 4: 78, 6: 70, 8: 62 };
 const INPUT_H = 50;
 
-function TableRoom({ config, onClose }: { config: TableConfig; onClose: () => void }) {
+function TableRoom({ config, onClose, hostRoom }: { config: TableConfig; onClose: () => void; hostRoom?: string }) {
+  const { user } = useSession();
+  // live réel dès qu'on est connecté ; sinon (mode test sans compte) la table de démonstration
+  return user ? <RealTableRoom config={config} onClose={onClose} hostRoom={hostRoom} /> : <DemoTableRoom config={config} onClose={onClose} />;
+}
+
+function DemoTableRoom({ config, onClose }: { config: TableConfig; onClose: () => void }) {
   const live = useTableLive(config);
+  return <TableView live={live} onClose={onClose} />;
+}
+
+function RealTableRoom({ config, onClose, hostRoom }: { config: TableConfig; onClose: () => void; hostRoom?: string }) {
+  const live = useRealTable(config, hostRoom);
+  return <TableView live={live} onClose={onClose} />;
+}
+
+/** Entrer comme spectateur dans la table d'un autre membre (depuis l'accueil) */
+export function TableViewer({ live, onClose }: { live: OnAirLive | null; onClose: () => void }) {
+  return (
+    <Modal visible={!!live} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaProvider>
+        {live && <TableRoom key={live.room} config={{ title: live.title, capacity: 6 }} hostRoom={live.room} onClose={onClose} />}
+      </SafeAreaProvider>
+    </Modal>
+  );
+}
+
+function TableView({ live, onClose }: { live: TableLive; onClose: () => void }) {
+  const config = live.config;
   const insets = useSafeAreaInsets();
   const { width: W, height: H } = useWindowDimensions();
   const g = useMemo(() => tableGeom(W, H, insets.top, insets.bottom), [W, H, insets.top, insets.bottom]);
@@ -64,16 +93,25 @@ function TableRoom({ config, onClose }: { config: TableConfig; onClose: () => vo
   const [menuSeat, setMenuSeat] = useState<number | null>(null);
   const [sheet, setSheet] = useState<'spectators' | 'queue' | 'gift' | null>(null);
   const [burst, setBurst] = useState<{ key: number; emoji: string } | null>(null);
+  const host = live.role === 'host' || live.role === 'demo';
 
-  // le live apparaît sur l'accueil ; les messages des spectateurs arrivent dans le chat de la table
-  const { profile, user } = useSession();
-  const onAir = useHostOnAir('table', {
-    active: !!user,
-    title: config.title,
-    pseudo: profile?.pseudo,
-    name: [profile?.prenom, profile?.nom].filter(Boolean).join(' '),
-    onMessage: (m) => live.post({ name: m.pseudo, text: m.text }),
-  });
+  // place libre : l'hôte ouvre les demandes ; un spectateur demande à s'asseoir
+  const onEmptySeat = () => {
+    if (host) return setSheet('queue');
+    if (live.role === 'viewer') live.request?.();
+    else if (live.role === 'requested') live.post({ name: 'Zembo', text: 'Ta demande est en attente de l’hôte…', system: true });
+  };
+  // bouton main levée
+  const onHand = () => {
+    if (host) return setSheet('queue');
+    if (live.role === 'viewer') live.request?.();
+    else if (live.role === 'requested') live.cancelRequest?.();
+    else {
+      const mine = live.seats.find((x) => x.you);
+      if (mine) setMenuSeat(mine.n);
+    }
+  };
+  const handLabel = live.role === 'viewer' ? 'Monter' : live.role === 'requested' ? 'Annuler' : live.role === 'stage' ? 'Ma place' : null;
 
   return (
     <View style={styles.root}>
@@ -101,11 +139,12 @@ function TableRoom({ config, onClose }: { config: TableConfig; onClose: () => vo
             key={s.n}
             seat={s}
             p={{ x: p.x, y: p.y, scale: 1, depth: 0 }}
-            base={BUBBLE[config.capacity]}
+            base={BUBBLE[config.capacity] ?? 70}
             speaking={live.speaking === i && !live.isMuted(s)}
             muted={live.isMuted(s)}
-            onPress={() => (s.name ? setMenuSeat(s.n) : setSheet('queue'))}
-            onMic={() => live.toggleMute(s.n)}
+            camera={live.camera?.(s) ?? null}
+            onPress={() => (s.name ? setMenuSeat(s.n) : onEmptySeat())}
+            onMic={() => (host || s.you ? live.toggleMute(s.n) : setMenuSeat(s.n))}
           />
         );
       })}
@@ -132,9 +171,10 @@ function TableRoom({ config, onClose }: { config: TableConfig; onClose: () => vo
           <Ionicons name="eye" size={15} color={colors.goldLight} />
           <Text style={styles.headBtnText}>{live.viewers}</Text>
         </Pressable>
-        <Pressable onPress={() => setSheet('queue')} style={[styles.headBtn, styles.headBtnRound]} hitSlop={6}>
-          <Ionicons name="hand-left" size={16} color={colors.goldLight} />
-          {live.queue.length > 0 && (
+        <Pressable onPress={onHand} style={[styles.headBtn, !handLabel && styles.headBtnRound, live.role === 'requested' && styles.headBtnOn]} hitSlop={6}>
+          <Ionicons name={live.role === 'stage' ? 'person' : 'hand-left'} size={16} color={live.role === 'requested' ? colors.bg : colors.goldLight} />
+          {!!handLabel && <Text style={[styles.headBtnText, live.role === 'requested' && { color: colors.bg }]}>{handLabel}</Text>}
+          {host && live.queue.length > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{live.queue.length}</Text>
             </View>
@@ -142,24 +182,41 @@ function TableRoom({ config, onClose }: { config: TableConfig; onClose: () => vo
         </Pressable>
       </LinearGradient>
 
+      {!!live.status && (
+        <View style={[styles.statusPill, { top: g.cy + g.h * 0.24 }]} pointerEvents="none">
+          <Text style={styles.statusText}>{live.status}</Text>
+        </View>
+      )}
+
       {burst && <GiftBurst key={burst.key} emoji={burst.emoji} x={g.cx} y={g.cy} onDone={() => setBurst(null)} />}
 
       {/* commentaires + saisie, par-dessus le bas de la table */}
-      <LiveFooter live={live} onGift={() => setSheet('gift')} onSend={onAir.send} />
-
-      {/* ta caméra, telle que la voient les spectateurs de l'accueil */}
-      <HostCam room={onAir.room} viewers={onAir.viewers} name={profile?.pseudo} style={{ top: insets.top + 64, right: 10 }} />
+      <LiveFooter live={live} onGift={() => setSheet('gift')} />
 
       <SpectatorsSheet live={live} visible={sheet === 'spectators'} onClose={() => setSheet(null)} />
       <QueueSheet live={live} visible={sheet === 'queue'} onClose={() => setSheet(null)} />
       <GiftSheet live={live} visible={sheet === 'gift'} onClose={() => setSheet(null)} onGift={(emoji) => setBurst({ key: Date.now(), emoji })} />
       <SeatMenuSheet live={live} seatN={menuSeat} onClose={() => setMenuSeat(null)} onQuit={onClose} />
+
+      {live.ended && (
+        <View style={styles.endWrap}>
+          <View style={styles.endCard}>
+            <Text style={styles.endTitle}>La table est terminée</Text>
+            <Text style={styles.endText}>L’hôte a fermé sa Zembo Table. Merci d’être passé·e !</Text>
+            <Pressable onPress={onClose} style={{ alignSelf: 'stretch' }}>
+              <LinearGradient colors={goldGradient} style={styles.endBtn}>
+                <Text style={styles.endBtnText}>Fermer</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 // ─── Bas de l'écran : commentaires qui défilent + barre de saisie ─────────
-function LiveFooter({ live, onGift, onSend }: { live: TableLive; onGift: () => void; onSend: (t: string) => void }) {
+function LiveFooter({ live, onGift }: { live: TableLive; onGift: () => void }) {
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -170,7 +227,6 @@ function LiveFooter({ live, onGift, onSend }: { live: TableLive; onGift: () => v
     const t = draft.trim();
     if (!t) return;
     live.say(t);
-    onSend(t);
     setDraft('');
     setEmojiOpen(false);
   };
@@ -261,9 +317,15 @@ function ChatLine({ m, fade }: { m: ChatMsg; fade: number }) {
   }
   return (
     <View style={[styles.line, m.gift && styles.lineGift, { opacity: fade }]}>
-      <Image source={photoUrl(m.name, 64)} style={styles.lineAvatar} />
+      {m.real ? (
+        <View style={styles.lineAvatar}>
+          <Initial name={m.name} size={22} />
+        </View>
+      ) : (
+        <Image source={photoUrl(m.name, 64)} style={styles.lineAvatar} />
+      )}
       <Text style={styles.lineText}>
-        <Text style={[styles.lineName, m.name === 'Deena' && { color: colors.goldLight }]}>{m.name} </Text>
+        <Text style={[styles.lineName, !m.real && m.name === 'Deena' && { color: colors.goldLight }]}>{m.name} </Text>
         {m.text}
       </Text>
     </View>
@@ -331,6 +393,15 @@ function GiftBurst({ emoji, x, y, onDone }: { emoji: string; x: number; y: numbe
 }
 
 const styles = StyleSheet.create({
+  headBtnOn: { backgroundColor: colors.gold, borderColor: colors.gold },
+  statusPill: { position: 'absolute', alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 5 },
+  statusText: { color: colors.goldLight, fontSize: 12, fontWeight: '700' },
+  endWrap: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center', padding: 30, zIndex: 20 },
+  endCard: { alignSelf: 'stretch', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 24 },
+  endTitle: { color: colors.text, fontSize: 20, fontWeight: '900' },
+  endText: { color: colors.textDim, fontSize: 14, textAlign: 'center', marginBottom: 8 },
+  endBtn: { height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  endBtnText: { color: colors.bg, fontWeight: '800', fontSize: 15 },
   root: { flex: 1, backgroundColor: '#050302' },
   header: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 16, gap: 8 },
   quit: {

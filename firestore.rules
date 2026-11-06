@@ -89,13 +89,52 @@ service cloud.firestore {
 
     // Lives (vidéo LiveKit) : le document est créé par le serveur (fonction livekitToken).
     // Tout membre connecté peut le lire ; seul l'hôte peut changer qui est sur scène.
+    // La salle est nommée format-uid de l'hôte : seul lui peut l'ouvrir.
+    // stage : un uid par place ('' = libre) ; names : pseudos ; muted : micros coupés par l'hôte ;
+    // perf : le passage en cours (Mic d'Or Thérapie).
     match /lives/{room} {
+      function stageOk() {
+        return request.resource.data.stage is list && request.resource.data.stage.size() <= 9;
+      }
       allow read: if signedIn();
-      allow update: if signedIn() && request.auth.uid == resource.data.host
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stage'])
-        && request.resource.data.stage is list
-        && request.resource.data.stage.size() <= 8;
-      allow create, delete: if false;
+      allow create: if signedIn()
+        && room.split('-').size() == 2 && room.split('-')[1] == request.auth.uid
+        && request.resource.data.host == request.auth.uid
+        && request.resource.data.keys().hasOnly(['host', 'stage', 'names', 'muted', 'capacity', 'perf', 'queue', 'since', 'createdAt'])
+        && stageOk();
+      allow update: if signedIn() && (
+        // l'hôte
+        (request.auth.uid == resource.data.host
+          && request.resource.data.host == resource.data.host
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stage', 'names', 'muted', 'capacity', 'perf', 'queue', 'since'])
+          && stageOk())
+        // une personne sur scène qui redescend d'elle-même (sans toucher aux autres places)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stage'])
+          && request.auth.uid in resource.data.stage
+          && !(request.auth.uid in request.resource.data.stage)
+          && request.resource.data.stage.size() == resource.data.stage.size()
+          && request.resource.data.stage.removeAll(['']) == resource.data.stage.removeAll([request.auth.uid, '']))
+      );
+      allow delete: if false;
+
+      // demandes pour monter sur scène : chacun la sienne ; l'hôte les voit et les retire
+      match /requests/{uid} {
+        allow read: if isMe(uid) || (signedIn() && get(/databases/$(database)/documents/lives/$(room)).data.host == request.auth.uid);
+        allow create: if isMe(uid)
+          && request.resource.data.keys().hasOnly(['pseudo', 'createdAt', 'slot'])
+          && (!('slot' in request.resource.data) || request.resource.data.slot is map)
+          && request.resource.data.pseudo is string && request.resource.data.pseudo.size() <= 40
+          && request.resource.data.createdAt == request.time;
+        allow delete: if isMe(uid) || (signedIn() && get(/databases/$(database)/documents/lives/$(room)).data.host == request.auth.uid);
+        allow update: if false;
+      }
+      // mains levées (« demander à parler ») : chacun la sienne ; l'hôte peut les baisser
+      match /hands/{uid} {
+        allow read: if signedIn();
+        allow create: if isMe(uid) && stampOnly();
+        allow delete: if isMe(uid) || (signedIn() && get(/databases/$(database)/documents/lives/$(room)).data.host == request.auth.uid);
+        allow update: if false;
+      }
     }
 
     // Lives en cours, affichés sur l'accueil (salle = format-uid de l'hôte).

@@ -11,10 +11,14 @@ import { useFeedPosts } from '../post/posts';
 import { useFollowingFeed } from '../post/social';
 import { UserProfile, type ProfileTarget } from '../post/UserProfile';
 import { useSession } from '../lib/session';
+import { auth } from '../lib/firebase';
 import { PostActionsHost } from '../post/PostActionsHost';
 import { useOnAirLives, type OnAirLive } from '../live/onair';
 import { LiveFeedCard } from '../live/LiveFeedCard';
 import { LiveViewer } from '../live/LiveViewer';
+import { TableViewer } from '../table/TableScreen';
+import { MicroViewer } from '../talk/MicroOuvertReal';
+import { SlamViewer } from '../talk/SlamReal';
 
 /** Un live en cours présenté comme une carte du fil */
 const liveItem = (l: OnAirLive): Post => ({
@@ -80,8 +84,18 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
     [shownRooms, others],
   );
   const [watch, setWatch] = useState<OnAirLive | null>(null);
+  const [tableOf, setTableOf] = useState<OnAirLive | null>(null);
+  const [microOf, setMicroOf] = useState<OnAirLive | null>(null);
+  const [slamOf, setSlamOf] = useState<OnAirLive | null>(null);
+  // une Zembo Table s'ouvre autour de la table ; les autres lives dans l'écran spectateur
   const openRealLive = useCallback(
-    (l: OnAirLive) => requireAuth('Connecte-toi pour regarder le live.', () => setWatch(l)),
+    (l: OnAirLive) => requireAuth('Connecte-toi pour regarder le live.', () => {
+        if (!auth.currentUser) return setWatch(l);
+        if (l.format === 'table') setTableOf(l);
+        else if (l.format === 'openmic') setMicroOf(l);
+        else if (l.format === 'slam') setSlamOf(l);
+        else setWatch(l);
+      }),
     [requireAuth],
   );
   const followed = useFollowingFeed(user?.uid);
@@ -107,7 +121,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
     setActive(0);
     requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
   }, [jumpTop]);
-  const playing = focused && !live && !watch && !profileOf && !tagOf;
+  const playing = focused && !live && !watch && !tableOf && !microOf && !slamOf && !profileOf && !tagOf;
 
   const changeTab = (t: FeedTab) => {
     setTab(t);
@@ -166,6 +180,9 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
       <ShareSheet post={shareFor} onClose={() => setShareFor(null)} />
       <LiveScreen post={live} onClose={() => setLive(null)} />
       <LiveViewer live={watch} onClose={() => setWatch(null)} />
+      <TableViewer live={tableOf} onClose={() => setTableOf(null)} />
+      <MicroViewer live={microOf} onClose={() => setMicroOf(null)} />
+      <SlamViewer live={slamOf} onClose={() => setSlamOf(null)} />
       <UserProfile target={profileOf} onClose={() => setProfileOf(null)} />
     </View>
     </PostActionsHost>

@@ -66,6 +66,9 @@ export function useLiveMedia(room: string | null, opts: { publish: boolean; mic:
       RoomEvent.TrackUnmuted,
       RoomEvent.LocalTrackPublished,
       RoomEvent.LocalTrackUnpublished,
+      RoomEvent.ActiveSpeakersChanged,
+      RoomEvent.ParticipantPermissionsChanged,
+      RoomEvent.ParticipantNameChanged,
     ];
     events.forEach((e) => r.on(e, refresh));
     setStatus('connecting');
@@ -109,12 +112,24 @@ export function useLiveMedia(room: string | null, opts: { publish: boolean; mic:
   }, [room, signedIn]);
 
   // caméra et micro suivent ta place : sur scène ou non, chrono en cours ou non
+  // (quand l'hôte fait monter quelqu'un, le serveur lui donne le droit d'envoyer : on réessaie alors)
+  const canPublish = status === 'on' && !!roomRef.current?.localParticipant.permissions?.canPublish;
   useEffect(() => {
     const r = roomRef.current;
     if (status !== 'on' || !r) return;
-    r.localParticipant.setCameraEnabled(opts.publish && opts.camera !== false).catch(() => {});
-    r.localParticipant.setMicrophoneEnabled(opts.publish && opts.mic).catch(() => {});
-  }, [status, opts.publish, opts.mic, opts.camera]);
+    const can = !!r.localParticipant.permissions?.canPublish;
+    r.localParticipant.setCameraEnabled(can && opts.publish && opts.camera !== false).catch(() => {});
+    r.localParticipant.setMicrophoneEnabled(can && opts.publish && opts.mic).catch(() => {});
+  }, [status, canPublish, opts.publish, opts.mic, opts.camera]);
+
+  /** Identifiants des personnes qui parlent en ce moment ('me' pour toi) */
+  const speakers = (): Set<string> => {
+    const r = roomRef.current;
+    const out = new Set<string>();
+    if (!r || status !== 'on') return out;
+    for (const p of r.activeSpeakers) out.add(p === r.localParticipant ? 'me' : p.identity);
+    return out;
+  };
 
   /** La caméra d'un joueur ('me' pour toi, sinon son identifiant Zembo), ou null */
   const cameraOf = (who: string): TrackRef | null => {
@@ -155,7 +170,7 @@ export function useLiveMedia(room: string | null, opts: { publish: boolean; mic:
     }
   };
 
-  return { status, error, cameraOf, cameras, flipCamera, facing };
+  return { status, error, cameraOf, cameras, speakers, flipCamera, facing };
 }
 
 /** Image d'une caméra du live (rien si elle n'est pas disponible) */

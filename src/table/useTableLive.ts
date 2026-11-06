@@ -1,6 +1,42 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import { CHAT0, LIVE_LINES, QUEUE0, SPECTATORS, initialSeats, now, type ChatMsg, type Seat, type TableConfig } from './data';
+import type { TrackRef } from '../live/media';
+
+export type QueueItem = { id: string; name: string; real?: boolean };
+
+/** Ce que l'écran de la table utilise, que le live soit réel ou de démonstration */
+export type TableLive = {
+  config: TableConfig;
+  seats: Seat[];
+  queue: QueueItem[];
+  speaking: number | null;
+  chat: ChatMsg[];
+  viewers: number;
+  occupied: number;
+  freeSeats: number;
+  accept: (id: string) => void;
+  decline: (id: string) => void;
+  removeFromTable: (n: number) => void;
+  toggleMute: (n: number) => void;
+  isMuted: (s: Seat) => boolean;
+  say: (text: string, gift?: boolean) => void;
+  post: (msg: Omit<ChatMsg, 'id' | 'time'>) => void;
+  /** 'demo' : live de démonstration (mode test sans compte) */
+  role: 'host' | 'stage' | 'requested' | 'viewer' | 'demo';
+  real: boolean;
+  /** spectateurs à afficher (null : seulement le nombre) */
+  spectators: string[] | null;
+  camera?: (s: Seat) => TrackRef | null;
+  request?: () => void;
+  cancelRequest?: () => void;
+  leave?: () => void;
+  myCam?: boolean;
+  toggleCam?: () => void;
+  flip?: () => void;
+  ended?: boolean;
+  status?: string;
+};
 
 // Un live autour d'une table : qui parle, micros, demandes pour monter, chat
 export function useTableLive(config: TableConfig) {
@@ -74,11 +110,11 @@ export function useTableLive(config: TableConfig) {
 
   const isMuted = useCallback((s: Seat) => !!muted[s.n], [muted]);
 
-  return useMemo(
+  return useMemo<TableLive>(
     () => ({
       config,
       seats,
-      queue,
+      queue: queue.map((name) => ({ id: name, name })),
       speaking,
       chat,
       viewers,
@@ -91,10 +127,12 @@ export function useTableLive(config: TableConfig) {
       isMuted,
       say,
       post,
+      role: 'demo',
+      real: false,
+      spectators: SPECTATORS,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [config, seats, queue, speaking, chat, viewers, occupied, freeSeats, isMuted],
   );
 }
 
-export type TableLive = ReturnType<typeof useTableLive>;
