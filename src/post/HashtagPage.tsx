@@ -93,7 +93,7 @@ function Body({ tag, onClose }: { tag: string; onClose: () => void }) {
       <VideoViewer posts={posts} start={viewer} onClose={() => setViewer(null)} />
       <PublishScreen
         kind={publishing ? 'video' : null}
-        initialCaption={`#${tag} `}
+        initialTags={[tag]}
         onClose={() => setPublishing(false)}
         onPublished={() => setPublishing(false)}
       />

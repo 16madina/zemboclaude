@@ -236,6 +236,8 @@ export type NewPost = {
   /** en secondes */
   duration: number | null;
   caption: string;
+  /** hashtags (champ à part) ; sinon ceux écrits dans la légende */
+  hashtags?: string[];
   pseudo: string;
   name: string;
   /** montage (éditeur) */
@@ -290,7 +292,7 @@ export async function publishPost(p: NewPost, onProgress?: (r: number) => void) 
     ...(p.soundRef ? { sound: clean(p.soundRef) } : {}),
     ...(p.duo ? { duo: clean(p.duo) } : {}),
     caption: p.caption.trim().slice(0, 300),
-    hashtags: hashtagsOf(p.caption),
+    hashtags: (p.hashtags ?? hashtagsOf(p.caption)).slice(0, 10),
     pseudo: p.pseudo,
     name: p.name,
     createdAt: serverTimestamp(),

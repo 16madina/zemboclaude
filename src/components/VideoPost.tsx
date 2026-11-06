@@ -13,6 +13,7 @@ import { PostInfo } from './PostInfo';
 import { useSession } from '../lib/session';
 import { setFollow, setLike, setSaved, useFollows, useLiked, useSaved } from '../post/social';
 import { FilterLayer, TextsLayer, useEditPlayback } from '../post/edit';
+import { DuoFrame, DuoSource } from '../post/duo';
 import { useWindowDimensions } from 'react-native';
 
 type Props = {
@@ -145,13 +146,15 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
           <Image source={post.image} placeholder={post.thumb} style={StyleSheet.absoluteFill} contentFit="contain" transition={150} />
         </>
       ) : post.duo ? (
-        // Duo : la vidéo d'origine à gauche, la nouvelle à droite
-        <View style={[StyleSheet.absoluteFill, styles.duoRow]}>
-          <DuoSource duo={post.duo} own={player} active={isActive && !paused} />
-          <View style={{ flex: 1 }}>
-            <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
-          </View>
-        </View>
+        // Duo : deux cases, la vidéo d'origine et la nouvelle
+        <DuoFrame
+          layout={post.duo.layout}
+          width={width}
+          height={height}
+          pseudo={post.duo.pseudo}
+          original={<DuoSource duo={post.duo} own={player} active={isActive && !paused} />}
+          me={<VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />}
+        />
       ) : (
         <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
       )}
@@ -196,45 +199,6 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
   );
 });
 
-// Duo : vidéo d'origine, muette (son son passe par le son repris), recalée quand la nouvelle vidéo boucle
-function DuoSource({ duo, own, active }: { duo: NonNullable<Post['duo']>; own: VideoPlayer; active: boolean }) {
-  const src = useVideoPlayer(duo.url, (p) => {
-    p.muted = true;
-    p.loop = true;
-  });
-  useEffect(() => {
-    if (active) {
-      try {
-        src.currentTime = duo.start ?? 0;
-      } catch {}
-      src.play();
-    } else src.pause();
-  }, [active, src, duo.start]);
-  useEffect(() => {
-    let last = 0;
-    const sub = own.addListener('timeUpdate', ({ currentTime }) => {
-      if (currentTime + 0.5 < last) {
-        try {
-          src.currentTime = duo.start ?? 0;
-        } catch {}
-      }
-      last = currentTime;
-    });
-    return () => sub.remove();
-  }, [own, src, duo.start]);
-  return (
-    <View style={{ flex: 1 }}>
-      <VideoView player={src} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
-      <View style={styles.duoTag}>
-        <Ionicons name="copy" size={11} color={colors.bg} />
-        <Text style={styles.duoTagText} numberOfLines={1}>
-          Duo · @{duo.pseudo}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
 // Fine barre de progression dorée en bas de la vidéo
 function ProgressBar({ player, paused, start = 0, end }: { player: VideoPlayer; paused: boolean; start?: number; end?: number }) {
   const ev = useEvent(player, 'timeUpdate');
@@ -275,21 +239,6 @@ function BigHeart({ x, y, rot, onDone }: Heart & { onDone: () => void }) {
 
 const styles = StyleSheet.create({
   container: { width: '100%', backgroundColor: '#000', overflow: 'hidden' },
-  duoRow: { flexDirection: 'row', gap: 2 },
-  duoTag: {
-    position: 'absolute',
-    left: 8,
-    top: 110,
-    maxWidth: '90%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.gold,
-  },
-  duoTagText: { color: colors.bg, fontSize: 11, fontWeight: '900' },
   topShade: { position: 'absolute', top: 0, left: 0, right: 0, height: 150 },
   bottomShade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 300 },
   center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },

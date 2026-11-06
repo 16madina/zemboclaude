@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { Linking, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useAudioPlayer } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { trackOf } from './edit';
 import type { DuoRef, SoundRef } from './sounds';
+import { DUO_LAYOUTS, DuoFrame, type DuoLayout } from './duo';
 
 // Caméra Zembo : filmer avec un son (« Utiliser ce son ») ou en Duo (la vidéo d'origine joue à côté).
 // La caméra n'existe que dans les versions récentes de l'app : on la charge à la demande.
@@ -22,7 +23,7 @@ try {
   Cam = null;
 }
 
-export type Recorded = { uri: string; width: number; height: number; duration: number };
+export type Recorded = { uri: string; width: number; height: number; duration: number; layout?: DuoLayout; mic: boolean };
 export type RecordMode = { kind: 'sound'; sound: SoundRef } | { kind: 'duo'; duo: DuoRef; sound: SoundRef | null };
 
 const MAX = 60;
@@ -66,8 +67,24 @@ function Recorder({ cam, mode, onClose, onRecorded }: { cam: CameraModule; mode:
   const isDuo = mode.kind === 'duo';
   const sound = mode.sound;
   const track = trackOf(sound?.trackId);
-  // Duo : on enregistre aussi ta voix ; avec un son : la caméra est muette, c'est le son choisi qu'on entend
-  const mute = !isDuo;
+  const { width: sw, height: sh } = useWindowDimensions();
+  // micro : en Duo il est ouvert (ta voix), avec un son il est coupé (tu mimes) — on peut changer
+  const [mic, setMic] = useState(isDuo);
+  const [layout, setLayout] = useState<DuoLayout>('lr');
+  const [tip, setTip] = useState<string | null>(null);
+  const mute = !mic;
+
+  // le son doit sortir même si l'iPhone est en mode silencieux, et par le haut-parleur
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true, allowsRecording: mic, shouldRouteThroughEarpiece: false }).catch(() => {});
+  }, [mic]);
+  // en partant : retour au son normal (haut-parleur, pas d'enregistrement)
+  useEffect(() => () => void setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false }).catch(() => {}), []);
+  useEffect(() => {
+    if (!tip) return;
+    const t = setTimeout(() => setTip(null), 1600);
+    return () => clearTimeout(t);
+  }, [tip]);
 
   // le son ou la vidéo d'origine, joués pendant qu'on filme
   const audio = useAudioPlayer(!isDuo ? (track?.file ?? (sound?.url ? { uri: sound.url } : null)) : null);
@@ -78,7 +95,7 @@ function Recorder({ cam, mode, onClose, onRecorded }: { cam: CameraModule; mode:
 
   useEffect(() => {
     if (!camPerm?.granted) askCam();
-    if (isDuo && !micPerm?.granted) askMic();
+    if (!micPerm?.granted) askMic();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -126,7 +143,7 @@ function Recorder({ cam, mode, onClose, onRecorded }: { cam: CameraModule; mode:
       setRecording(false);
       if (res?.uri) {
         const dur = Math.max(1, Math.min(MAX, (Date.now() - startedAt.current) / 1000));
-        onRecorded({ uri: res.uri, width: 720, height: 1280, duration: dur });
+        onRecorded({ uri: res.uri, width: 720, height: 1280, duration: dur, layout: isDuo ? layout : undefined, mic });
       }
     } catch {
       stopSource();
@@ -202,11 +219,16 @@ function Recorder({ cam, mode, onClose, onRecorded }: { cam: CameraModule; mode:
   return (
     <View style={styles.root}>
       {isDuo ? (
-        <View style={[StyleSheet.absoluteFill, { flexDirection: 'row', gap: 2 }]}>
-          <View style={{ flex: 1 }}>
-            <VideoView player={duoPlayer} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
-          </View>
-          <View style={{ flex: 1 }}>{camera}</View>
+        // Duo : deux cases (zone entre la barre du haut et le bouton)
+        <View style={{ position: 'absolute', left: 0, right: 0, top: insets.top + 70, height: sh - insets.top - insets.bottom - 70 - 170 }}>
+          <DuoFrame
+            layout={layout}
+            width={sw}
+            height={sh - insets.top - insets.bottom - 70 - 170}
+            pseudo={mode.duo.pseudo}
+            original={<VideoView player={duoPlayer} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />}
+            me={camera}
+          />
         </View>
       ) : (
         camera
@@ -232,6 +254,41 @@ function Recorder({ cam, mode, onClose, onRecorded }: { cam: CameraModule; mode:
           <Ionicons name="camera-reverse" size={24} color="#fff" />
         </Pressable>
       </View>
+
+      {/* côté droit : micro, disposition du Duo */}
+      <View style={[styles.side, { top: insets.top + 80 }]}>
+        <Pressable
+          onPress={() => {
+            setMic((m) => !m);
+            setTip(mic ? 'Micro coupé : on entend seulement le son' : isDuo ? 'Micro ouvert : ta voix est enregistrée' : 'Micro ouvert : ta voix s’ajoute au son');
+          }}
+          disabled={recording}
+          style={styles.sideBtn}
+        >
+          <Ionicons name={mic ? 'mic' : 'mic-off'} size={24} color={mic ? colors.gold : '#fff'} />
+          <Text style={styles.sideText}>{mic ? 'Micro' : 'Muet'}</Text>
+        </Pressable>
+        {isDuo && (
+          <Pressable
+            onPress={() => {
+              const i = DUO_LAYOUTS.findIndex((l) => l.id === layout);
+              const next = DUO_LAYOUTS[(i + 1) % DUO_LAYOUTS.length];
+              setLayout(next.id);
+              setTip(next.label);
+            }}
+            disabled={recording}
+            style={styles.sideBtn}
+          >
+            <Ionicons name={DUO_LAYOUTS.find((l) => l.id === layout)!.icon} size={24} color="#fff" />
+            <Text style={styles.sideText}>Disposition</Text>
+          </Pressable>
+        )}
+      </View>
+      {tip && (
+        <View style={[styles.tip, { top: insets.top + 70 }]} pointerEvents="none">
+          <Text style={styles.tipText}>{tip}</Text>
+        </View>
+      )}
 
       {count !== null && (
         <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
@@ -280,6 +337,11 @@ const styles = StyleSheet.create({
   soundText: { color: colors.bg, fontSize: 13, fontWeight: '900', flexShrink: 1 },
   count: { color: '#fff', fontSize: 120, fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 12 },
   bottom: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  side: { position: 'absolute', right: 10, gap: 18, alignItems: 'center' },
+  sideBtn: { alignItems: 'center', width: 64, paddingVertical: 6, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.35)' },
+  sideText: { color: '#fff', fontSize: 11, fontWeight: '800', marginTop: 3 },
+  tip: { position: 'absolute', alignSelf: 'center', paddingHorizontal: 14, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center' },
+  tipText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   hint: { color: '#fff', fontSize: 14, fontWeight: '800', marginBottom: 14, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 6 },
   recOuter: { width: 84, height: 84, borderRadius: 42, borderWidth: 5, borderColor: 'rgba(255,255,255,0.85)', alignItems: 'center', justifyContent: 'center' },
   recInner: { width: 64, height: 64, borderRadius: 32 },

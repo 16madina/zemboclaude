@@ -3,7 +3,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { formatCount } from '../utils/format';
@@ -39,7 +39,10 @@ function Body({ target, onClose }: { target: SoundTarget; onClose: () => void })
   const cell = (width - 2) / 3;
   const cover = sound.cover ?? (posts[0] ? thumbOf(posts[0]) : undefined);
 
-  useEffect(() => () => player.pause(), [player]);
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+    return () => player.pause();
+  }, [player]);
 
   const toggle = () => {
     if (status.playing) player.pause();
@@ -137,10 +140,13 @@ export function CreateFlow({ mode, onClose }: { mode: RecordMode | null; onClose
     recorded && current
       ? {
           picked: { uri: recorded.uri, width: recorded.width, height: recorded.height, duration: recorded.duration },
-          // avec un son : la caméra était muette, on entend le son choisi
-          edit: sound?.trackId ? { volume: 0, music: { id: sound.trackId, volume: 1 } } : current.kind === 'sound' ? { volume: 0 } : {},
+          // micro coupé : on entend seulement le son choisi ; micro ouvert : ta voix en plus
+          edit: {
+            volume: recorded.mic ? 1 : 0,
+            ...(sound?.trackId ? { music: { id: sound.trackId, volume: 1 } } : {}),
+          },
           soundRef: sound ?? undefined,
-          duo: current.kind === 'duo' ? current.duo : undefined,
+          duo: current.kind === 'duo' ? { ...current.duo, layout: recorded.layout ?? 'lr' } : undefined,
         }
       : undefined;
 

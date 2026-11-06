@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,10 +24,11 @@ import { colors, goldGradient } from '../theme';
 import { auth } from '../lib/firebase';
 import { useSession } from '../lib/session';
 import { COMPRESS_END, hashtagsOf, publishPost, type MediaKind } from './posts';
-import { currentTag, useTagSuggestions } from './hashtags';
+import { useTagSuggestions } from './hashtags';
 import { EditorScreen } from './EditorScreen';
 import { FilterLayer, TextsLayer, useEditPlayback, type PostEdit } from './edit';
 import type { DuoRef, SoundRef } from './sounds';
+import { DuoFrame, DuoSource } from './duo';
 
 // Publier une vidéo ou une photo sur l'accueil :
 // 1. choisir dans la galerie ou filmer / photographier
@@ -45,6 +46,7 @@ export type PublishPreset = { picked: Picked; edit?: PostEdit; soundRef?: SoundR
 export function PublishScreen({
   kind,
   initialCaption = '',
+  initialTags = [],
   preset,
   onClose,
   onPublished,
@@ -52,13 +54,15 @@ export function PublishScreen({
   kind: MediaKind | null;
   /** légende de départ (ex. « #zembochallenge » depuis la page d'un hashtag) */
   initialCaption?: string;
+  /** hashtags de départ (ex. depuis la page d'un hashtag) */
+  initialTags?: string[];
   preset?: PublishPreset;
   onClose: () => void;
   onPublished: () => void;
 }) {
   return (
     <Modal visible={kind !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaProvider>{kind && <Body kind={kind} initialCaption={initialCaption} preset={preset} onClose={onClose} onPublished={onPublished} />}</SafeAreaProvider>
+      <SafeAreaProvider>{kind && <Body kind={kind} initialCaption={initialCaption} initialTags={initialTags} preset={preset} onClose={onClose} onPublished={onPublished} />}</SafeAreaProvider>
     </Modal>
   );
 }
@@ -66,12 +70,14 @@ export function PublishScreen({
 function Body({
   kind,
   initialCaption,
+  initialTags,
   preset,
   onClose,
   onPublished,
 }: {
   kind: MediaKind;
   initialCaption: string;
+  initialTags: string[];
   preset?: PublishPreset;
   onClose: () => void;
   onPublished: () => void;
@@ -82,6 +88,9 @@ function Body({
   const [edit, setEdit] = useState<PostEdit>(preset?.edit ?? {});
   const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState(initialCaption);
+  const [tags, setTags] = useState<string[]>(initialTags);
+  const [tagText, setTagText] = useState('');
+  const [tagFocus, setTagFocus] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const isVideo = kind === 'video';
   const signedIn = !!auth.currentUser;
@@ -134,6 +143,7 @@ function Body({
           soundRef: preset?.soundRef,
           duo: preset?.duo,
           caption,
+          hashtags: [...new Set([...tags, ...hashtagsOf(caption)])].slice(0, 10),
           pseudo: profile?.pseudo || 'membre',
           name: [profile?.prenom, profile?.nom].filter(Boolean).join(' ') || profile?.pseudo || 'Membre Zembo',
         },
@@ -165,17 +175,19 @@ function Body({
     } else onClose();
   };
 
-  const tags = hashtagsOf(caption);
-  // hashtag en cours de frappe : suggestions ; sinon : tendances
-  const typing = currentTag(caption);
-  const suggestions = useTagSuggestions(typing ?? '');
-  const shownTags = suggestions.filter((t) => !tags.includes(t.tag) || t.tag === typing);
-  const putTag = (tag: string) => {
-    setCaption((c) => {
-      const base = currentTag(c) !== null ? c.replace(/#[\p{L}\p{N}_]*$/u, '') : c && !c.endsWith(' ') ? `${c} ` : c;
-      return `${base}#${tag} `.slice(0, MAX_CAPTION);
-    });
+  // hashtags : champ à part ; on tape le mot, il s'ajoute en dessous
+  const addTag = (raw: string) => {
+    const t = raw.replace(/^#+/, '').toLowerCase().replace(/[^\p{L}\p{N}_]/gu, '').slice(0, 40);
+    if (!t) return;
+    setTags((list) => (list.includes(t) || list.length >= 10 ? list : [...list, t]));
+    setTagText('');
   };
+  // les propositions s'affichent sous le champ : on fait défiler pour les montrer au-dessus du clavier
+  const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const scrollDown = () => setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 250);
+  const typedTag = tagText.replace(/^#+/, '').toLowerCase().replace(/[^\p{L}\p{N}_]/gu, '');
+  // en tapant : hashtags qui commencent pareil ; champ vide : les plus populaires
+  const suggestions = useTagSuggestions(tagFocus ? typedTag : null).filter((t) => !tags.includes(t.tag));
 
   if (picked && editing) {
     return (
@@ -185,6 +197,8 @@ function Body({
         duration={picked.duration}
         initial={edit}
         lockedSound={preset?.soundRef?.title ?? (preset?.duo ? `Duo avec @${preset.duo.pseudo}` : undefined)}
+        duo={preset?.duo}
+        sound={preset?.soundRef}
         onBack={() => setEditing(false)}
         onDone={(e) => {
           setEdit(e);
@@ -219,9 +233,9 @@ function Body({
         </View>
       ) : (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
+          <ScrollView ref={scroll} contentContainerStyle={{ padding: 16, paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
             <View style={styles.preview}>
-              {isVideo ? <VideoPreview uri={picked.uri} edit={edit} /> : <Image source={picked.uri} style={StyleSheet.absoluteFill} contentFit="cover" />}
+              {isVideo ? <VideoPreview uri={picked.uri} edit={edit} duo={preset?.duo} /> : <Image source={picked.uri} style={StyleSheet.absoluteFill} contentFit="cover" />}
               <FilterLayer id={edit.filter} />
               <TextsLayer texts={edit.texts} width={200} height={356} />
               <Pressable onPress={() => setEditing(true)} style={styles.modify} disabled={progress !== null}>
@@ -243,39 +257,81 @@ function Body({
             <TextInput
               value={caption}
               onChangeText={(t) => setCaption(t.slice(0, MAX_CAPTION))}
-              placeholder="Dis quelque chose… ajoute des #hashtags"
+              placeholder="Dis quelque chose sur ta vidéo…"
               placeholderTextColor={colors.textFaint}
               style={styles.input}
               multiline
               editable={progress === null}
             />
-            <View style={styles.inputFoot}>
-              <Text style={styles.tags} numberOfLines={1}>
-                {tags.map((t) => `#${t}`).join('  ')}
-              </Text>
-              <Text style={styles.count}>
-                {caption.length}/{MAX_CAPTION}
-              </Text>
+            <Text style={[styles.count, { textAlign: 'right', marginTop: 6 }]}>
+              {caption.length}/{MAX_CAPTION}
+            </Text>
+
+            <Text style={styles.label}>HASHTAGS</Text>
+            <View style={styles.tagInputBox}>
+              <Text style={styles.tagHash}>#</Text>
+              <TextInput
+                value={tagText}
+                onChangeText={(t) => {
+                  // espace ou virgule : les mots tapés deviennent des hashtags, le dernier reste en cours
+                  const parts = t.split(/[\s,]+/);
+                  const last = parts.pop() ?? '';
+                  parts.forEach(addTag);
+                  setTagText(last.slice(0, 40));
+                  scrollDown();
+                }}
+                onSubmitEditing={() => addTag(tagText)}
+                onFocus={() => {
+                  setTagFocus(true);
+                  scrollDown();
+                }}
+                onBlur={() => setTagFocus(false)}
+                blurOnSubmit={false}
+                returnKeyType="done"
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder={tags.length >= 10 ? '10 hashtags maximum' : 'Tape un mot, ex. danse'}
+                placeholderTextColor={colors.textFaint}
+                style={styles.tagInput}
+                editable={progress === null && tags.length < 10}
+              />
+              {!!typedTag && (
+                <Pressable onPress={() => addTag(tagText)} hitSlop={8} style={styles.tagAdd}>
+                  <Ionicons name="add" size={18} color={colors.bg} />
+                </Pressable>
+              )}
             </View>
-            {(shownTags.length > 0 || (typing && typing.length > 1)) && (
-              <View style={styles.tagBox}>
-                <Text style={styles.tagBoxTitle}>{typing ? 'Hashtags' : 'Hashtags populaires'}</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 8 }}>
-                  {typing && typing.length > 1 && !shownTags.some((t) => t.tag === typing) && (
-                    <Pressable onPress={() => putTag(typing)} style={[styles.tagChip, styles.tagChipNew]}>
-                      <Text style={styles.tagChipText}>#{typing}</Text>
-                      <Text style={styles.tagChipCount}>nouveau</Text>
-                    </Pressable>
-                  )}
-                  {shownTags.map((t) => (
-                    <Pressable key={t.tag} onPress={() => putTag(t.tag)} style={styles.tagChip}>
-                      <Text style={styles.tagChipText}>#{t.tag}</Text>
-                      <Text style={styles.tagChipCount}>
-                        {t.count} vidéo{t.count > 1 ? 's' : ''}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
+
+            {/* propositions : populaires ou qui commencent pareil, avec le nombre de vidéos */}
+            {tagFocus && (suggestions.length > 0 || typedTag.length > 0) && (
+              <View style={styles.suggestBox}>
+                <Text style={styles.tagBoxTitle}>{typedTag ? 'Propositions' : 'Hashtags populaires'}</Text>
+                {typedTag.length > 0 && !suggestions.some((t) => t.tag === typedTag) && (
+                  <Pressable onPress={() => addTag(typedTag)} style={styles.suggestRow}>
+                    <Text style={styles.suggestTag}>#{typedTag}</Text>
+                    <Text style={styles.suggestCount}>Nouveau hashtag</Text>
+                  </Pressable>
+                )}
+                {suggestions.slice(0, 6).map((t) => (
+                  <Pressable key={t.tag} onPress={() => addTag(t.tag)} style={styles.suggestRow}>
+                    <Text style={styles.suggestTag}>#{t.tag}</Text>
+                    <Text style={styles.suggestCount}>
+                      {t.count} vidéo{t.count > 1 ? 's' : ''}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {/* hashtags ajoutés */}
+            {tags.length > 0 && (
+              <View style={styles.chips}>
+                {tags.map((t) => (
+                  <Pressable key={t} onPress={() => setTags((l) => l.filter((x) => x !== t))} style={styles.tagChip}>
+                    <Text style={styles.tagChipText}>#{t}</Text>
+                    <Ionicons name="close" size={14} color={colors.textDim} />
+                  </Pressable>
+                ))}
               </View>
             )}
             <View style={styles.note}>
@@ -317,7 +373,7 @@ function Body({
   );
 }
 
-function VideoPreview({ uri, edit }: { uri: string; edit: PostEdit }) {
+function VideoPreview({ uri, edit, duo }: { uri: string; edit: PostEdit; duo?: DuoRef }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
     p.muted = true;
@@ -326,7 +382,9 @@ function VideoPreview({ uri, edit }: { uri: string; edit: PostEdit }) {
   });
   // aperçu muet : on garde la coupe, pas la musique
   useEditPlayback(player, { start: edit.start, end: edit.end }, true);
-  return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />;
+  const me = <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />;
+  if (duo) return <DuoFrame layout={duo.layout} width={200} height={356} pseudo={duo.pseudo} original={<DuoSource duo={duo} own={player} active />} me={me} />;
+  return me;
 }
 
 function Source({ icon, title, sub, onPress }: { icon: keyof typeof Ionicons.glyphMap; title: string; sub: string; onPress: () => void }) {
@@ -422,7 +480,35 @@ const styles = StyleSheet.create({
   count: { color: colors.textFaint, fontSize: 12 },
   tagBox: { marginTop: 12 },
   tagBoxTitle: { color: colors.textDim, fontSize: 12, fontWeight: '800', marginBottom: 8 },
-  tagChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border },
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: 'rgba(212,175,55,0.5)',
+  },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  tagInputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 50,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tagHash: { color: colors.gold, fontSize: 20, fontWeight: '900', marginRight: 6 },
+  tagInput: { flex: 1, color: colors.text, fontSize: 16 },
+  tagAdd: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center' },
+  suggestBox: { marginTop: 8, padding: 12, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  suggestRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  suggestTag: { color: colors.gold, fontSize: 15.5, fontWeight: '800' },
+  suggestCount: { color: colors.textFaint, fontSize: 12.5 },
   tagChipNew: { borderColor: 'rgba(212,175,55,0.6)', borderStyle: 'dashed' },
   tagChipText: { color: colors.gold, fontSize: 14, fontWeight: '800' },
   tagChipCount: { color: colors.textFaint, fontSize: 11, marginTop: 1 },

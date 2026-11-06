@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { setAudioModeAsync } from 'expo-audio';
 import { StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -25,6 +26,7 @@ import { MotDor } from './src/games/MotDor';
 import { PublishScreen } from './src/post/PublishScreen';
 import type { MediaKind } from './src/post/posts';
 
+
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -40,6 +42,10 @@ export default function App() {
 
 function Main() {
   const { requireAuth } = useSession();
+  // les sons (musiques, sons repris) jouent aussi quand l'iPhone est en mode silencieux
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+  }, []);
   const [tab, setTab] = useState<MainTab>('home');
   const [createOpen, setCreateOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);

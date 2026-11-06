@@ -30,6 +30,8 @@ import {
   type TextItem,
 } from './edit';
 import type { MediaKind } from './posts';
+import type { DuoRef, SoundRef } from './sounds';
+import { DuoFrame, DuoSource } from './duo';
 
 // Éditeur façon CapCut : couper, son, musique, texte, filtres, couverture.
 // Rien n'est recalculé : on rend des réglages, appliqués à la lecture (voir edit.tsx).
@@ -45,10 +47,16 @@ export function EditorScreen({
   duration: knownDuration,
   initial,
   lockedSound,
+  duo,
+  sound,
   onBack,
   onDone,
 }: {
   kind: MediaKind;
+  /** Duo : la vidéo d'origine s'affiche dans sa case */
+  duo?: DuoRef;
+  /** son repris : on l'entend dans l'aperçu */
+  sound?: SoundRef;
   /** son imposé (« Utiliser ce son », Duo) : pas d'outil Musique */
   lockedSound?: string;
   uri: string;
@@ -88,7 +96,7 @@ export function EditorScreen({
   const [duration, setDuration] = useState(knownDuration ?? 0);
   const [thumbs, setThumbs] = useState<{ t: number; img: VideoThumbnail }[]>([]);
   const [editing, setEditing] = useState<TextItem | null>(null);
-  useEditPlayback(player, edit, !editing);
+  useEditPlayback(player, edit, !editing, sound);
 
   // durée réelle + images de la vidéo (barre de coupe, filtres, couverture)
   useEffect(() => {
@@ -154,7 +162,16 @@ export function EditorScreen({
       {/* aperçu */}
       <View style={styles.stage}>
         <View style={[styles.frame, { width: frameW, height: frameH }]}>
-          {isVideo ? (
+          {isVideo && duo ? (
+            <DuoFrame
+              layout={duo.layout}
+              width={frameW}
+              height={frameH}
+              pseudo={duo.pseudo}
+              original={<DuoSource duo={duo} own={player} active={!editing} />}
+              me={<VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />}
+            />
+          ) : isVideo ? (
             <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
           ) : (
             <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" />

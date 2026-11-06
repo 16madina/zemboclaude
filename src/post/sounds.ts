@@ -25,7 +25,15 @@ export type SoundRef = {
   cover?: string;
 };
 
-export type DuoRef = { postId: string; url: string; start?: number; pseudo: string; uid?: string };
+export type DuoRef = {
+  postId: string;
+  url: string;
+  start?: number;
+  pseudo: string;
+  uid?: string;
+  /** disposition des deux cases (côte à côte, haut/bas) */
+  layout?: import('./duo').DuoLayout;
+};
 
 /** Le son d'une publication (null pour une photo sans musique) */
 export function soundOf(post: Post): SoundRef | null {
