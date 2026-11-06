@@ -88,10 +88,7 @@ export function useFeedPosts(max = 50) {
 export function useUserPosts(uid: string | null | undefined) {
   const [posts, setPosts] = useState<Post[]>([]);
   useEffect(() => {
-    if (!uid) {
-      setPosts([]);
-      return;
-    }
+    if (!uid) return;
     return onSnapshot(
       query(collection(db, 'posts'), where('uid', '==', uid), limit(200)),
       (snap) =>
@@ -101,7 +98,7 @@ export function useUserPosts(uid: string | null | undefined) {
       () => {},
     );
   }, [uid]);
-  return posts;
+  return uid ? posts : [];
 }
 
 /** Mots-dièse écrits dans la légende (#zembo) */
@@ -164,6 +161,25 @@ async function videoThumb(uri: string) {
   }
 }
 
+// ── Compression vidéo (≈ 2,8 Mb/s, 1280 px max) ──
+
+/** Avant l'envoi : une vidéo de 40 s passe d'environ 50 Mo à environ 12 Mo, sans perte visible.
+ *  Sans le module (Expo Go, ancienne version de l'app), on envoie la vidéo telle quelle. */
+async function compressVideo(uri: string, onProgress?: (r: number) => void) {
+  try {
+    // chargé à la demande : le module natif n'existe que dans les versions récentes de l'app
+    const { Video } = require('react-native-compressor') as typeof import('react-native-compressor');
+    const out = await Video.compress(
+      uri,
+      { compressionMethod: 'manual', bitrate: 2_800_000, maxSize: 1280, minimumFileSizeForCompress: 6, progressDivider: 5 },
+      (r) => onProgress?.(r),
+    );
+    return out.startsWith('file://') ? out : `file://${out}`;
+  } catch {
+    return uri;
+  }
+}
+
 // ── Envoi ──
 
 async function tempFile(bytes: Uint8Array, name: string) {
@@ -200,6 +216,8 @@ async function upload(path: string, fileUri: string, contentType: string, onProg
   return `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${dl}`;
 }
 
+export const COMPRESS_END = 0.35;
+
 export type NewPost = {
   kind: MediaKind;
   uri: string;
@@ -212,7 +230,8 @@ export type NewPost = {
   name: string;
 };
 
-/** Envoie le fichier, sa miniature, puis crée la publication. onProgress va de 0 à 1. */
+/** Envoie le fichier (vidéo compressée), sa miniature, puis crée la publication. onProgress va de 0 à 1.
+ *  Pour une vidéo, de 0 à 0,35 c'est la compression (COMPRESS_END). */
 export async function publishPost(p: NewPost, onProgress?: (r: number) => void) {
   const user = auth.currentUser;
   if (!user) throw new Error('non-connecte');
@@ -233,7 +252,10 @@ export async function publishPost(p: NewPost, onProgress?: (r: number) => void) 
     if (t) thumb = await upload(`${base}/thumb.jpg`, await tempFile(t.bytes, 'thumb.jpg'), 'image/jpeg');
   } else {
     const t = await videoThumb(p.uri);
-    url = await upload(`${base}/video.mp4`, p.uri, 'video/mp4', (r) => onProgress?.(0.05 + r * 0.85));
+    // 0 → 0,35 : compression ; 0,35 → 0,95 : envoi
+    const light = await compressVideo(p.uri, (r) => onProgress?.(0.02 + r * 0.33));
+    onProgress?.(0.35);
+    url = await upload(`${base}/video.mp4`, light, 'video/mp4', (r) => onProgress?.(0.35 + r * 0.55));
     if (t) thumb = await upload(`${base}/thumb.jpg`, await tempFile(t.bytes, 'thumb.jpg'), 'image/jpeg');
   }
   onProgress?.(0.95);

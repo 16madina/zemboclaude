@@ -23,7 +23,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { colors, goldGradient } from '../theme';
 import { auth } from '../lib/firebase';
 import { useSession } from '../lib/session';
-import { hashtagsOf, publishPost, type MediaKind } from './posts';
+import { COMPRESS_END, hashtagsOf, publishPost, type MediaKind } from './posts';
 
 // Publier une vidéo ou une photo sur l'accueil :
 // 1. choisir dans la galerie ou filmer / photographier
@@ -202,7 +202,13 @@ function Body({ kind, onClose, onPublished }: { kind: MediaKind; onClose: () => 
               <View style={styles.sending}>
                 <View style={styles.sendingRow}>
                   <ActivityIndicator color={colors.gold} />
-                  <Text style={styles.sendingText}>{progress < 0.95 ? `Envoi… ${Math.round(progress * 100)} %` : 'Presque fini…'}</Text>
+                  <Text style={styles.sendingText}>
+                    {isVideo && progress < COMPRESS_END
+                      ? `Compression… ${Math.round((progress / COMPRESS_END) * 100)} %`
+                      : progress < 0.95
+                        ? `Envoi… ${Math.round(((progress - (isVideo ? COMPRESS_END : 0)) / (0.95 - (isVideo ? COMPRESS_END : 0))) * 100)} %`
+                        : 'Presque fini…'}
+                  </Text>
                 </View>
                 <View style={styles.track}>
                   <LinearGradient colors={goldGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.fill, { width: `${Math.max(4, progress * 100)}%` }]} />
