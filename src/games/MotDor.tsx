@@ -63,7 +63,7 @@ const GREEN = '#22B24C';
 const YELLOW = '#F4B400';
 const GREY = '#5C5A6B';
 const RED = '#FF5A6E';
-const FLIP = 240; // délai entre deux cases qui se retournent (ms)
+const FLIP = 350; // délai entre deux cases qui se retournent (ms), comme une note toutes les 0,35 s
 
 type P = { id: string; name: string; photo: number | string; me?: boolean; skill: number };
 type Res = { found: boolean; tries: number; time: number; greens: number; points: number };
