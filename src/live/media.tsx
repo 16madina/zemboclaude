@@ -46,6 +46,7 @@ export type MediaStatus = 'off' | 'connecting' | 'on' | 'error';
 export function useLiveMedia(room: string | null, opts: { publish: boolean; mic: boolean; name?: string }) {
   const [status, setStatus] = useState<MediaStatus>('off');
   const [error, setError] = useState<string | null>(null);
+  const [facing, setFacing] = useState<'user' | 'environment'>('user');
   const roomRef = useRef<Room | null>(null);
   const [, refresh] = useReducer((x: number) => x + 1, 0);
   const signedIn = !!auth.currentUser;
@@ -111,7 +112,22 @@ export function useLiveMedia(room: string | null, opts: { publish: boolean; mic:
     return { participant: p, publication: pub, source: lk.Track.Source.Camera } as TrackRef;
   };
 
-  return { status, error, cameraOf };
+  /** Passe de la caméra avant à la caméra arrière (et inversement) */
+  const flipCamera = async () => {
+    const r = roomRef.current;
+    if (!lk || !r) return;
+    const track = r.localParticipant.getTrackPublication(lk.Track.Source.Camera)?.track as LocalVideoTrack | undefined;
+    if (!track) return;
+    const next = facing === 'user' ? 'environment' : 'user';
+    try {
+      await track.restartTrack({ facingMode: next });
+      setFacing(next);
+    } catch {
+      // caméra indisponible : on garde la même
+    }
+  };
+
+  return { status, error, cameraOf, flipCamera, facing };
 }
 
 /** Image d'une caméra du live (rien si elle n'est pas disponible) */

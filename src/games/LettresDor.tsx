@@ -87,11 +87,11 @@ type RoundData =
   | { kind: 'L'; letters: string[]; sol: ReturnType<typeof solveLetters> }
   | { kind: 'C'; plaques: number[]; target: number; best: number; bestSteps: string[]; reach: Map<number, string[]> };
 type Result = { id: string; answer: Answer | null; valid: boolean; points: number; dist?: number; note: string };
-type Phase = 'mode' | 'intro' | 'choose' | 'draw' | 'play' | 'reveal' | 'elim' | 'champion' | 'end' | 'size' | 'signup' | 'tableEnd' | 'leagueEnd';
+type Phase = 'mode' | 'intro' | 'choose' | 'draw' | 'play' | 'reveal' | 'elim' | 'champion' | 'end' | 'size' | 'signup' | 'tableEnd' | 'leagueEnd' | 'camcheck';
 type Format = 'tournoi' | 'groupe';
 type Standing = { p: Player; pts: number; game: number; wins: number };
 type TableEnd = { ranking: Player[]; label: string; next: Player[]; nextLabel: string; note: string; step: 'table' | 'ronde' | 'final'; tables?: Player[][]; absent?: string[] };
-const IDLE: Phase[] = ['intro', 'mode', 'elim', 'champion', 'end', 'size', 'signup', 'tableEnd', 'leagueEnd'];
+const IDLE: Phase[] = ['intro', 'mode', 'elim', 'champion', 'end', 'size', 'signup', 'tableEnd', 'leagueEnd', 'camcheck'];
 type Overlay = { who: Player; ranking: Player[]; up?: Player[] };
 type Crowns = Record<string, { n: number; p: Player }>;
 
@@ -244,10 +244,14 @@ function Game({ onClose }: { onClose: () => void }) {
 
   // ── caméras et micros (LiveKit) : ta caméra est diffusée quand tu es sur scène,
   // les micros se coupent pendant le chrono pour ne pas gâcher les réponses cachées ──
+  // tu vérifies ta caméra avant le direct ; ensuite tu peux couper ton micro et retourner la caméra
+  const [camReady, setCamReady] = useState(false);
+  const [afterCam, setAfterCam] = useState<Phase>('intro');
+  const [myMic, setMyMic] = useState(true);
   const liveRoom = mediaAvailable && phase !== 'mode' && auth.currentUser ? `lettres-${auth.currentUser.uid}` : null;
   const media = useLiveMedia(liveRoom, {
-    publish: meOnStage && !['mode', 'size', 'signup'].includes(phase),
-    mic: phase !== 'play',
+    publish: camReady && meOnStage && !['mode', 'size', 'signup', 'camcheck'].includes(phase),
+    mic: myMic && phase !== 'play',
     name: profile?.pseudo,
   });
   const micsOff = phase === 'play';
@@ -1146,10 +1150,34 @@ function Game({ onClose }: { onClose: () => void }) {
             <View key={p.id} style={{ width: camW }}>
               <View style={[styles.cam, { height: card4 * 1.6 }, p.me && styles.camMe, (flash || choosing) && styles.camFlash]}>
                 <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
-                {p.me && <CameraFeed trackRef={media.cameraOf('me')} mirror style={StyleSheet.absoluteFill} />}
+                {p.me && <CameraFeed trackRef={media.cameraOf('me')} mirror={media.facing === 'user'} style={StyleSheet.absoluteFill} />}
+                {p.me && media.status === 'on' && (
+                  <View style={styles.camTools}>
+                    <Pressable
+                      onPress={() => {
+                        tap();
+                        setMyMic((m) => !m);
+                      }}
+                      hitSlop={6}
+                      style={[styles.camTool, !myMic && styles.camToolOff]}
+                    >
+                      <Ionicons name={myMic ? 'mic' : 'mic-off'} size={13} color="#fff" />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        tap();
+                        void media.flipCamera();
+                      }}
+                      hitSlop={6}
+                      style={styles.camTool}
+                    >
+                      <Ionicons name="camera-reverse" size={14} color="#fff" />
+                    </Pressable>
+                  </View>
+                )}
                 <LinearGradient colors={['transparent', 'rgba(8,6,30,0.85)', 'rgba(8,6,30,0.97)']} locations={[0.45, 0.75, 1]} style={StyleSheet.absoluteFill} />
                 <View style={styles.camDot} />
-                {micsOff && (
+                {(micsOff || (p.me && !myMic)) && (
                   <View style={styles.micOff} pointerEvents="none">
                     <Ionicons name="mic-off" size={12} color="#fff" />
                   </View>
@@ -1315,14 +1343,27 @@ function Game({ onClose }: { onClose: () => void }) {
           top={T + 120}
           onTournament={() => {
             setFormat('tournoi');
-            setPhase('intro');
+            setAfterCam('intro');
+            setPhase(camReady ? 'intro' : 'camcheck');
           }}
           onGroup={() => {
             tap();
             setFormat('groupe');
-            setPhase('size');
+            setAfterCam('size');
+            setPhase(camReady ? 'size' : 'camcheck');
           }}
           onClose={onClose}
+        />
+      )}
+      {phase === 'camcheck' && (
+        <CamCheck
+          top={T + 90}
+          onReady={() => {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+            setCamReady(true);
+            setPhase(afterCam);
+          }}
+          onBack={() => setPhase('mode')}
         />
       )}
       {phase === 'size' && <SizePicker top={T + 100} onPick={pickSize} onBack={() => setPhase('mode')} />}
@@ -1605,6 +1646,37 @@ function LeagueInfo({ status, next, note, onPress }: { status: string | null; ne
         </View>
       )}
     </Pressable>
+  );
+}
+
+// ── Avant le direct : tu vérifies ta caméra ──
+function CamCheck({ top, onReady, onBack }: { top: number; onReady: () => void; onBack: () => void }) {
+  return (
+    <Cover top={top}>
+      <Text style={styles.finalTitle}>Vérifie ta caméra</Text>
+      <Text style={styles.finalSub}>Sur scène, ta caméra et ton micro sont en direct.</Text>
+      <View style={styles.checkCam}>
+        <Image source={DEENA_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <CameraPreview active style={StyleSheet.absoluteFill} />
+        {!mediaAvailable && (
+          <View style={styles.checkNote}>
+            <Text style={styles.checkNoteText}>Aperçu dans l’app installée</Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.rulesText}>
+        {'• Mets-toi face à la lumière, le visage bien visible.\n• Tu peux couper ton micro ou retourner la caméra depuis ta case.\n• Pendant le chrono, les micros se coupent tout seuls.'}
+      </Text>
+      <Pressable onPress={onReady}>
+        <LinearGradient colors={goldGradient} style={styles.replay}>
+          <Ionicons name="videocam" size={18} color={INK} />
+          <Text style={styles.replayText}>Je suis prêt, j’allume ma caméra</Text>
+        </LinearGradient>
+      </Pressable>
+      <Pressable onPress={onBack} style={{ alignSelf: 'center', marginTop: 12, padding: 6 }}>
+        <Text style={styles.quitText}>Retour</Text>
+      </Pressable>
+    </Cover>
   );
 }
 
@@ -2484,6 +2556,31 @@ const styles = StyleSheet.create({
   lgNextText: { color: '#C9B8FF', fontSize: 12, fontWeight: '900', marginRight: 6 },
   lgNextAv: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#15114A' },
   lgNextNames: { flex: 1, color: 'rgba(255,255,255,0.7)', fontSize: 11.5, fontWeight: '700', marginLeft: 6 },
+  camTools: { position: 'absolute', top: 24, right: 5, gap: 6 },
+  camTool: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  camToolOff: { backgroundColor: '#E5484D', borderColor: '#E5484D' },
+  checkCam: {
+    alignSelf: 'center',
+    width: 170,
+    height: 230,
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: GOLD2,
+    backgroundColor: '#15114A',
+    marginBottom: 12,
+  },
+  checkNote: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingVertical: 6, backgroundColor: 'rgba(0,0,0,0.6)' },
+  checkNoteText: { color: '#fff', fontSize: 11, fontWeight: '800', textAlign: 'center' },
   micOff: {
     position: 'absolute',
     top: 6,
