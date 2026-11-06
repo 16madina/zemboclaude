@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, goldGradient, textShadow } from '../theme';
@@ -32,7 +33,7 @@ export const LiveFeedCard = memo(function LiveFeedCard({
   onOpen: (l: OnAirLive) => void;
 }) {
   // aperçu de la caméra seulement quand la carte est à l'écran (et pour les membres connectés)
-  const preview = isActive && mediaAvailable && !!auth.currentUser;
+  const preview = isActive && mediaAvailable && !!auth.currentUser && !live.demo;
   const media = useLiveMedia(preview ? live.room : null, { publish: false, mic: false, audio: false });
   const cams = media.cameras();
   const main = cams.find((c) => c.id === live.uid) ?? cams[0] ?? null;
@@ -57,6 +58,9 @@ export const LiveFeedCard = memo(function LiveFeedCard({
     <Pressable style={[styles.container, { height }]} onPress={() => onOpen(live)}>
       {main ? (
         <CameraFeed trackRef={main.track} style={StyleSheet.absoluteFill} />
+      ) : live.cover ? (
+        // live d'exemple : son illustration en plein écran
+        <Image source={live.cover} style={StyleSheet.absoluteFill} contentFit="cover" />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.center]}>
           <LinearGradient colors={['#3A2B10', '#120D06', '#0A0806']} style={StyleSheet.absoluteFill} />
@@ -85,7 +89,13 @@ export const LiveFeedCard = memo(function LiveFeedCard({
             <Text style={styles.formatText}>{formatCount(live.viewers)}</Text>
           </View>
         </View>
-        <Text style={styles.host}>@{live.pseudo}</Text>
+        <View style={styles.hostRow}>
+          <View>
+            <Animated.View style={[styles.ringSmall, ring]} />
+            {live.face ? <Image source={live.face} style={styles.face} /> : <Initial name={who} size={38} />}
+          </View>
+          <Text style={styles.host}>@{live.pseudo}</Text>
+        </View>
         {!!live.title && live.title !== FORMAT_LABEL[live.format] && (
           <Text style={styles.title} numberOfLines={2}>
             {live.title}
@@ -115,7 +125,10 @@ const styles = StyleSheet.create({
   liveTagText: { color: colors.bg, fontWeight: '900', fontSize: 11, letterSpacing: 0.5 },
   format: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   formatText: { color: colors.goldLight, fontSize: 12, fontWeight: '700' },
-  host: { color: colors.white, fontSize: 16, fontWeight: '800', marginTop: 10, ...textShadow },
+  host: { color: colors.white, fontSize: 16, fontWeight: '800', ...textShadow },
+  hostRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  face: { width: 38, height: 38, borderRadius: 19, borderWidth: 2, borderColor: colors.gold },
+  ringSmall: { position: 'absolute', left: -4, top: -4, width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: colors.gold },
   title: { color: colors.white, fontSize: 14, marginTop: 4, lineHeight: 19, ...textShadow },
   cta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, borderRadius: 22, marginTop: 14, alignSelf: 'flex-start', paddingHorizontal: 22 },
   ctaText: { color: colors.bg, fontWeight: '900', fontSize: 15 },

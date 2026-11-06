@@ -62,7 +62,7 @@ function TableRoom({ config, onClose, hostRoom }: { config: TableConfig; onClose
   return user ? <RealTableRoom config={config} onClose={onClose} hostRoom={hostRoom} /> : <DemoTableRoom config={config} onClose={onClose} />;
 }
 
-function DemoTableRoom({ config, onClose }: { config: TableConfig; onClose: () => void }) {
+export function DemoTableRoom({ config, onClose }: { config: TableConfig; onClose: () => void }) {
   const live = useTableLive(config);
   return <TableView live={live} onClose={onClose} />;
 }

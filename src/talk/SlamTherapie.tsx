@@ -55,7 +55,7 @@ export const COUNTDOWN = 10;
 
 type Heart = { id: number; x: number; y: number; v: Animated.Value };
 
-function SlamLive({ onClose }: { onClose: () => void }) {
+export function SlamLive({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const T = insets.top;
 

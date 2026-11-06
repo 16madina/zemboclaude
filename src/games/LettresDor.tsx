@@ -214,15 +214,16 @@ const GIFTS: Gift[] = [
   { name: 'Couronne', emoji: '👑', cost: 99 },
 ];
 
-export function LettresDor({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** `preview` : simple aperçu (live d'exemple de l'accueil), sans caméra en direct ni live sur l'accueil */
+export function LettresDor({ open, onClose, preview }: { open: boolean; onClose: () => void; preview?: boolean }) {
   return (
     <LiveSlide open={open}>
-      <Game onClose={onClose} />
+      <Game onClose={onClose} preview={preview} />
     </LiveSlide>
   );
 }
 
-function Game({ onClose }: { onClose: () => void }) {
+function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const T = insets.top;
@@ -317,7 +318,7 @@ function Game({ onClose }: { onClose: () => void }) {
   // tu vérifies ta caméra avant le direct ; ensuite tu peux couper ton micro et retourner la caméra
   const [camReady, setCamReady] = useState(false);
   const [myMic, setMyMic] = useState(true);
-  const liveRoom = mediaAvailable && !training && !['mode', 'level'].includes(phase) && auth.currentUser ? `lettres-${auth.currentUser.uid}` : null;
+  const liveRoom = !preview && mediaAvailable && !training && !['mode', 'level'].includes(phase) && auth.currentUser ? `lettres-${auth.currentUser.uid}` : null;
   const media = useLiveMedia(liveRoom, {
     publish: camReady && meOnStage && !['mode', 'size', 'signup', 'camcheck'].includes(phase),
     mic: myMic && phase !== 'play',

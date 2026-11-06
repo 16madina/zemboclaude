@@ -19,6 +19,8 @@ import { LiveViewer } from '../live/LiveViewer';
 import { TableViewer } from '../table/TableScreen';
 import { MicroViewer } from '../talk/MicroOuvertReal';
 import { SlamViewer } from '../talk/SlamReal';
+import { DemoLive } from '../live/DemoLive';
+import { DEMO_LIVES } from '../live/demoLives';
 
 /** Un live en cours présenté comme une carte du fil */
 const liveItem = (l: OnAirLive): Post => ({
@@ -68,7 +70,8 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
   const onAir = useOnAirLives();
   // La liste des lives du fil ne change que tout en haut : plus bas, un live qui commence ou se
   // termine décalerait la vidéo qu'on regarde. Les chiffres (spectateurs, titre) restent à jour.
-  const others = useMemo(() => onAir.filter((l) => l.uid !== user?.uid), [onAir, user?.uid]);
+  // (suivis des lives d'exemple, retirés avant le lancement comme les vidéos d'exemple)
+  const others = useMemo(() => [...onAir.filter((l) => l.uid !== user?.uid), ...DEMO_LIVES], [onAir, user?.uid]);
   const [shownRooms, setShownRooms] = useState<string[]>([]);
   const atTop = active === 0;
   useEffect(() => {
@@ -87,9 +90,13 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
   const [tableOf, setTableOf] = useState<OnAirLive | null>(null);
   const [microOf, setMicroOf] = useState<OnAirLive | null>(null);
   const [slamOf, setSlamOf] = useState<OnAirLive | null>(null);
+  const [demoOf, setDemoOf] = useState<OnAirLive | null>(null);
   // une Zembo Table s'ouvre autour de la table ; les autres lives dans l'écran spectateur
   const openRealLive = useCallback(
-    (l: OnAirLive) => requireAuth('Connecte-toi pour regarder le live.', () => {
+    (l: OnAirLive) =>
+      l.demo
+        ? setDemoOf(l)
+        : requireAuth('Connecte-toi pour regarder le live.', () => {
         if (!auth.currentUser) return setWatch(l);
         if (l.format === 'table') setTableOf(l);
         else if (l.format === 'openmic') setMicroOf(l);
@@ -121,7 +128,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
     setActive(0);
     requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
   }, [jumpTop]);
-  const playing = focused && !live && !watch && !tableOf && !microOf && !slamOf && !profileOf && !tagOf;
+  const playing = focused && !live && !watch && !tableOf && !microOf && !slamOf && !demoOf && !profileOf && !tagOf;
 
   const changeTab = (t: FeedTab) => {
     setTab(t);
@@ -174,7 +181,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
         />
       )}
 
-      <TopTabs value={tab} onChange={changeTab} onLive={() => (onAir.find((l) => l.uid !== user?.uid) ? openRealLive(onAir.find((l) => l.uid !== user?.uid)!) : setLive(firstLive))} />
+      <TopTabs value={tab} onChange={changeTab} onLive={() => (others[0] ? openRealLive(others[0]) : setLive(firstLive))} />
 
       <CommentsSheet post={commentsFor} onClose={() => setCommentsFor(null)} />
       <ShareSheet post={shareFor} onClose={() => setShareFor(null)} />
@@ -183,6 +190,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
       <TableViewer live={tableOf} onClose={() => setTableOf(null)} />
       <MicroViewer live={microOf} onClose={() => setMicroOf(null)} />
       <SlamViewer live={slamOf} onClose={() => setSlamOf(null)} />
+      <DemoLive live={demoOf} onClose={() => setDemoOf(null)} />
       <UserProfile target={profileOf} onClose={() => setProfileOf(null)} />
     </View>
     </PostActionsHost>

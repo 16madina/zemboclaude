@@ -43,6 +43,12 @@ export type OnAirLive = {
   viewers: number;
   startedAt: number;
   aliveAt: number;
+  /** live d'exemple (fictif) : montre à quoi ressemblera l'accueil, ouvre la démonstration */
+  demo?: boolean;
+  /** image de fond de la carte (exemples) */
+  cover?: number;
+  /** photo de l'hôte (exemples) */
+  face?: number | string;
 };
 
 export type LiveChatMsg = { id: string; uid: string; pseudo: string; text: string; at: number };

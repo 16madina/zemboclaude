@@ -155,15 +155,16 @@ const fmt = (s: number) => {
 };
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
-export function MotDor({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** `preview` : simple aperçu (live d'exemple de l'accueil), sans caméra en direct ni live sur l'accueil */
+export function MotDor({ open, onClose, preview }: { open: boolean; onClose: () => void; preview?: boolean }) {
   return (
     <LiveSlide open={open}>
-      <Game onClose={onClose} />
+      <Game onClose={onClose} preview={preview} />
     </LiveSlide>
   );
 }
 
-function Game({ onClose }: { onClose: () => void }) {
+function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const T = insets.top;
@@ -248,7 +249,7 @@ function Game({ onClose }: { onClose: () => void }) {
   // ── caméras (LiveKit) : seul le joueur actif a le micro ouvert pendant son tour ──
   const [camReady, setCamReady] = useState(false);
   const [myMic, setMyMic] = useState(true);
-  const liveRoom = mediaAvailable && !training && phase !== 'lobby' && auth.currentUser ? `motdor-${auth.currentUser.uid}` : null;
+  const liveRoom = !preview && mediaAvailable && !training && phase !== 'lobby' && auth.currentUser ? `motdor-${auth.currentUser.uid}` : null;
   const media = useLiveMedia(liveRoom, {
     publish: camReady && meOnStage,
     mic: myMic && phase === 'turn' && activeId === 'me', // fermé pour tous les autres, impossible à rallumer

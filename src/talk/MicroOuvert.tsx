@@ -77,7 +77,7 @@ export function MicroOuvert({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
-function MicroLive({ onClose }: { onClose: () => void }) {
+export function MicroLive({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const T = insets.top;
