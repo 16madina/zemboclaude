@@ -226,7 +226,7 @@ function Actions({ onPass, onHello, onConnect }: { onPass: () => void; onHello: 
       </Action>
       <Action label="Dire Hello" hint="Lance la conversation" onPress={onHello} gold>
         <View style={styles.coinGlow}>
-          <Image source={HELLO_ICON} style={styles.coinBig} contentFit="contain" />
+          <Image source={HELLO_ICON} style={styles.coin} contentFit="contain" />
         </View>
       </Action>
       <Action label="Connecter" hint="Si le feeling est là" onPress={onConnect}>
@@ -516,10 +516,9 @@ const styles = StyleSheet.create({
   moreText: { color: colors.gold, fontSize: 13, fontWeight: '800' },
   actions: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-start', marginTop: 14 },
   actionWrap: { alignItems: 'center', width: 110 },
-  action: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  coin: { width: 64, height: 64 },
-  coinBig: { width: 80, height: 80 },
-  coinGlow: { borderRadius: 40, shadowColor: colors.gold, shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } },
+  action: { width: 64, height: 64, margin: 1, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  coin: { width: 66, height: 66 },
+  coinGlow: { borderRadius: 33, shadowColor: colors.gold, shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } },
   actionGold: { backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 1.5, borderColor: colors.gold },
   actionLabel: { color: colors.text, fontSize: 12.5, fontWeight: '800', marginTop: 6 },
   actionHint: { color: colors.textFaint, fontSize: 10.5, marginTop: 1 },
