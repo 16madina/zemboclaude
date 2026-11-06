@@ -12,6 +12,7 @@ import { VideoViewer } from '../components/VideoViewer';
 import { Sheet } from '../table/TableSheets';
 import { useSession } from '../lib/session';
 import { deletePost, useUserPosts } from '../post/posts';
+import { useMyLikedPosts, useMySavedPosts, useStats } from '../post/social';
 
 type Tab = 'posts' | 'private' | 'saved' | 'liked';
 const TABS: { key: Tab; icon: keyof typeof Ionicons.glyphMap; on: keyof typeof Ionicons.glyphMap }[] = [
@@ -24,6 +25,8 @@ const LISTS: Record<Tab, Post[]> = { posts: MY_POSTS, private: [], saved: SAVED,
 const EMPTY: Partial<Record<Tab, { icon: keyof typeof Ionicons.glyphMap; title: string; sub: string }>> = {
   posts: { icon: 'videocam-outline', title: 'Publie ta première vidéo', sub: 'Tes vidéos et tes photos apparaîtront ici et sur l’accueil.' },
   private: { icon: 'lock-closed-outline', title: 'Tes vidéos privées', sub: 'Les vidéos que tu publies en privé apparaîtront ici, visibles par toi seule.' },
+  saved: { icon: 'bookmark-outline', title: 'Rien d’enregistré', sub: 'Touche le signet sur une publication pour la retrouver ici.' },
+  liked: { icon: 'heart-outline', title: 'Aucun j’aime', sub: 'Les publications que tu aimes apparaîtront ici.' },
 };
 
 // Onglet Profil de l'utilisatrice connectée
@@ -84,8 +87,12 @@ function ProfileView({
   const [toast, setToast] = useState<string | null>(null);
 
   const mine = useUserPosts(uid);
-  // compte réel : seulement mes vraies publications
-  const list = tab === 'posts' && uid ? mine : LISTS[tab];
+  const liked = useMyLikedPosts(uid);
+  const saved = useMySavedPosts(uid);
+  const stats = useStats(uid);
+  // compte réel : seulement mes vraies données ; mode test : exemples
+  const real: Partial<Record<Tab, Post[]>> = { posts: mine, saved, liked };
+  const list = uid ? (real[tab] ?? LISTS[tab]) : LISTS[tab];
   const cell = (width - 2) / 3;
   const askDelete = (p: Post) =>
     Alert.alert('Supprimer cette publication ?', 'Elle disparaîtra de l’accueil et de ton profil.', [
@@ -135,11 +142,11 @@ function ProfileView({
           </View>
 
           <View style={styles.stats}>
-            <Stat n={ME.following} label="Abonnements" />
+            <Stat n={uid ? stats.following : ME.following} label="Abonnements" />
             <View style={styles.statSep} />
-            <Stat n={ME.followers} label="Abonnés" />
+            <Stat n={uid ? stats.followers : ME.followers} label="Abonnés" />
             <View style={styles.statSep} />
-            <Stat n={ME.likes} label="J’aime" />
+            <Stat n={uid ? stats.likes : ME.likes} label="J’aime" />
           </View>
 
           <View style={styles.buttons}>
@@ -228,8 +235,8 @@ function ProfileView({
                   </LinearGradient>
                 )}
                 <View style={styles.cellViews}>
-                  <Ionicons name={p.kind === 'photo' ? 'image-outline' : 'play-outline'} size={13} color={colors.white} />
-                  <Text style={styles.cellViewsText}>{formatCount(p.views ?? p.likes * 9)}</Text>
+                  <Ionicons name={p.uid ? 'heart' : p.kind === 'photo' ? 'image-outline' : 'play-outline'} size={13} color={colors.white} />
+                  <Text style={styles.cellViewsText}>{formatCount(p.uid ? p.likes : (p.views ?? p.likes * 9))}</Text>
                 </View>
               </Pressable>
             ))}

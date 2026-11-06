@@ -8,6 +8,9 @@ import { CommentsSheet } from '../components/CommentsSheet';
 import { ShareSheet } from '../components/ShareSheet';
 import { LiveScreen } from './LiveScreen';
 import { useFeedPosts } from '../post/posts';
+import { useFollowingFeed } from '../post/social';
+import { UserProfile, type ProfileTarget } from '../post/UserProfile';
+import { useSession } from '../lib/session';
 
 
 // Page d'accueil : vidéos plein écran qui défilent verticalement
@@ -20,11 +23,15 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
   const [live, setLive] = useState<Post | null>(null);
 
   const real = useFeedPosts();
+  const { user } = useSession();
+  const followed = useFollowingFeed(user?.uid);
+  const [profileOf, setProfileOf] = useState<ProfileTarget | null>(null);
+  const openProfile = useCallback((p: Post) => p.uid && setProfileOf({ uid: p.uid, pseudo: p.user.handle, name: p.user.name }), []);
   const listRef = useRef<FlatList<Post>>(null);
   // les vraies publications des membres passent en premier, puis les exemples (retirés avant le lancement)
   const data = useMemo(
-    () => (tab === 'foryou' ? [...real, ...FEED] : tab === 'explore' ? [...real, ...EXPLORE_FEED] : FOLLOWING_FEED),
-    [tab, real],
+    () => (tab === 'foryou' ? [...real, ...FEED] : tab === 'explore' ? [...real, ...EXPLORE_FEED] : [...followed, ...FOLLOWING_FEED]),
+    [tab, real, followed],
   );
 
   // après une publication : onglet Pour toi, tout en haut
@@ -34,7 +41,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
     setActive(0);
     requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
   }, [jumpTop]);
-  const playing = focused && !live;
+  const playing = focused && !live && !profileOf;
 
   const changeTab = (t: FeedTab) => {
     setTab(t);
@@ -67,6 +74,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
               onComments={openComments}
               onShare={openShare}
               onOpenLive={openLive}
+              onProfile={openProfile}
             />
           )}
           pagingEnabled
@@ -86,6 +94,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
       <CommentsSheet post={commentsFor} onClose={() => setCommentsFor(null)} />
       <ShareSheet post={shareFor} onClose={() => setShareFor(null)} />
       <LiveScreen post={live} onClose={() => setLive(null)} />
+      <UserProfile target={profileOf} onClose={() => setProfileOf(null)} />
     </View>
   );
 }

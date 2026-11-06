@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View, GestureResponderEvent } from 'react-native';
+import { Alert, Animated, Easing, Pressable, StyleSheet, View, GestureResponderEvent } from 'react-native';
 import { useVideoPlayer, VideoView, type VideoPlayer } from 'expo-video';
 import { useEvent } from 'expo';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +10,8 @@ import { colors } from '../theme';
 import type { Post } from '../data/feed';
 import { ActionRail } from './ActionRail';
 import { PostInfo } from './PostInfo';
+import { useSession } from '../lib/session';
+import { setFollow, setLike, setSaved, useFollows, useLiked, useSaved } from '../post/social';
 
 type Props = {
   post: Post;
@@ -18,12 +20,14 @@ type Props = {
   onComments: (post: Post) => void;
   onShare: (post: Post) => void;
   onOpenLive: (post: Post) => void;
+  /** ouvre le profil de l'auteur (publications réelles) */
+  onProfile?: (post: Post) => void;
 };
 
 type Heart = { id: number; x: number; y: number; rot: number };
 
 // Une vidéo plein écran du fil
-export const VideoPost = memo(function VideoPost({ post, height, isActive, onComments, onShare, onOpenLive }: Props) {
+export const VideoPost = memo(function VideoPost({ post, height, isActive, onComments, onShare, onOpenLive, onProfile }: Props) {
   const isPhoto = post.kind === 'photo';
   const player = useVideoPlayer(isPhoto ? null : post.video, (p) => {
     p.loop = true;
@@ -31,8 +35,33 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
   });
 
   const [paused, setPaused] = useState(false);
-  const [liked, setLiked] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const { user, guest, requireAuth } = useSession();
+  const me = user?.uid ?? null;
+  const real = !!post.uid;
+  const mine = real && post.uid === me;
+  // publications réelles : état lu sur le serveur ; exemples : état local
+  const serverLiked = useLiked(me, post);
+  const serverSaved = useSaved(me, post);
+  const serverFollows = useFollows(me, post.uid);
+  const [demoLiked, setDemoLiked] = useState(false);
+  const [demoSaved, setDemoSaved] = useState(false);
+  const [demoFollows, setDemoFollows] = useState(false);
+  const liked = real ? serverLiked : demoLiked;
+  const saved = real ? serverSaved : demoSaved;
+  const follows = real ? serverFollows : demoFollows;
+  // le serveur met les chiffres à jour en 1 à 2 s : on affiche le changement tout de suite
+  const [likeDelta, setLikeDelta] = useState(0);
+  const [saveDelta, setSaveDelta] = useState(0);
+  useEffect(() => setLikeDelta(0), [post.likes]);
+  useEffect(() => setSaveDelta(0), [post.saves]);
+
+  /** Vrai s'il faut un compte (et prévient la personne) */
+  const needAccount = (what: string) => {
+    if (!real || me) return false;
+    if (guest) Alert.alert('Crée ton compte', `En mode test sans compte, tu ne peux pas ${what}.`);
+    else requireAuth(`Connecte-toi pour ${what}.`);
+    return true;
+  };
   const [hearts, setHearts] = useState<Heart[]>([]);
   const lastTap = useRef(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,12 +92,27 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
     setHearts((h) => [...h, { id, x, y, rot: Math.random() * 40 - 20 }]);
   }, []);
 
-  const toggleLike = useCallback(() => {
-    setLiked((l) => {
-      if (!l) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      return !l;
-    });
-  }, []);
+  const like = (on: boolean) => {
+    if (needAccount('aimer les publications')) return;
+    if (on) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (!real) return setDemoLiked(on);
+    if (on === liked) return;
+    setLikeDelta((d) => d + (on ? 1 : -1));
+    setLike(me!, post.id, on).catch(() => setLikeDelta(0));
+  };
+  const toggleLike = () => like(!liked);
+  const toggleSave = () => {
+    if (needAccount('enregistrer les publications')) return;
+    if (!real) return setDemoSaved((v) => !v);
+    setSaveDelta((d) => d + (saved ? -1 : 1));
+    setSaved(me!, post.id, !saved).catch(() => setSaveDelta(0));
+  };
+  const follow = () => {
+    if (needAccount('t’abonner')) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (!real) return setDemoFollows(true);
+    setFollow(me!, post.uid!, true).catch(() => {});
+  };
 
   // 1 tap = pause / lecture, 2 taps = j'aime
   const onTap = (e: GestureResponderEvent) => {
@@ -78,10 +122,7 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
       if (tapTimer.current) clearTimeout(tapTimer.current);
       lastTap.current = 0;
       addHeart(locationX, locationY);
-      if (!liked) {
-        setLiked(true);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }
+      if (!liked) like(true);
       return;
     }
     lastTap.current = now;
@@ -123,12 +164,16 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
         post={post}
         liked={liked}
         saved={saved}
+        likeCount={real ? post.likes + likeDelta : post.likes + (liked ? 1 : 0)}
+        saveCount={real ? post.saves + saveDelta : post.saves + (saved ? 1 : 0)}
+        canFollow={!follows && !mine}
         spinning={isActive && !paused}
         onLike={toggleLike}
-        onSave={() => setSaved((s) => !s)}
+        onSave={toggleSave}
+        onFollow={follow}
         onComments={() => onComments(post)}
         onShare={() => onShare(post)}
-        onAvatar={isLive ? () => onOpenLive(post) : undefined}
+        onAvatar={isLive ? () => onOpenLive(post) : real && onProfile ? () => onProfile(post) : undefined}
       />
 
       {!isLive && !isPhoto && <ProgressBar player={player} paused={paused} />}

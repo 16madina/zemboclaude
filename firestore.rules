@@ -7,10 +7,16 @@ service cloud.firestore {
 
     function signedIn() { return request.auth != null; }
     function isMe(uid) { return signedIn() && request.auth.uid == uid; }
+    // petit document « qui → quoi » : seulement la date, posée par le serveur
+    function stampOnly() {
+      return request.resource.data.keys().hasOnly(['createdAt']) && request.resource.data.createdAt == request.time;
+    }
+    function postExists(id) { return exists(/databases/$(database)/documents/posts/$(id)); }
 
     // Fiche du compte Zembo
+    // (contient email et téléphone : lisible seulement par soi-même ; la partie publique est dans /profiles)
     match /users/{uid} {
-      allow read: if signedIn();
+      allow read: if isMe(uid);
       allow create: if isMe(uid)
         && request.resource.data.keys().hasAll(['nom', 'prenom', 'pseudo', 'email'])
         && request.resource.data.pseudo is string
@@ -19,6 +25,34 @@ service cloud.firestore {
       // le pseudo ne peut pas être changé directement (il est réservé dans /usernames)
       allow update: if isMe(uid) && request.resource.data.pseudo == resource.data.pseudo;
       allow delete: if isMe(uid);
+
+      // users/{uid}/followers/{fid} : fid suit uid (posé par fid)
+      match /followers/{fid} {
+        allow read: if true;
+        allow create: if isMe(fid) && fid != uid && stampOnly();
+        allow delete: if isMe(fid);
+      }
+      // users/{uid}/following/{tid} : uid suit tid (posé par uid)
+      match /following/{tid} {
+        allow read: if true;
+        allow create: if isMe(uid) && tid != uid && stampOnly();
+        allow delete: if isMe(uid);
+      }
+      // mes j'aime et mes enregistrements (privés)
+      match /likes/{pid} {
+        allow read, delete: if isMe(uid);
+        allow create: if isMe(uid) && stampOnly();
+      }
+      match /saved/{pid} {
+        allow read, delete: if isMe(uid);
+        allow create: if isMe(uid) && stampOnly() && postExists(pid);
+      }
+    }
+
+    // Fiche publique d'un membre : compteurs (abonnés, abonnements, j'aime reçus), tenue par le serveur
+    match /profiles/{uid} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // Réservation des pseudos Zembo (un pseudo = un compte).
@@ -81,6 +115,29 @@ service cloud.firestore {
         && request.resource.data.caption is string
         && request.resource.data.caption.size() <= 300;
       allow delete: if isMe(resource.data.uid);
+
+      // posts/{id}/likes/{uid} : uid aime la publication
+      match /likes/{uid} {
+        allow read: if true;
+        allow create: if isMe(uid) && stampOnly() && postExists(id);
+        allow delete: if isMe(uid);
+      }
+      // commentaires : chacun écrit les siens ; l'auteur du commentaire ou de la publication peut le supprimer
+      match /comments/{cid} {
+        allow read: if true;
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['uid', 'pseudo', 'name', 'text', 'createdAt'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.createdAt == request.time
+          && postExists(id);
+        allow delete: if signedIn()
+          && (resource.data.uid == request.auth.uid
+            || get(/databases/$(database)/documents/posts/$(id)).data.uid == request.auth.uid);
+        allow update: if false;
+      }
     }
 
     // Tout le reste est fermé par défaut

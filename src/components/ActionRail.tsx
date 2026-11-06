@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,17 +11,35 @@ type Props = {
   post: Post;
   liked: boolean;
   saved: boolean;
+  likeCount: number;
+  saveCount: number;
+  /** le « + » sous la photo : absent si déjà abonné(e) ou si c'est ma publication */
+  canFollow: boolean;
   spinning: boolean;
   onLike: () => void;
   onSave: () => void;
+  onFollow: () => void;
   onComments: () => void;
   onShare: () => void;
   onAvatar?: () => void;
 };
 
 // Colonne de boutons à droite de la vidéo
-export function ActionRail({ post, liked, saved, spinning, onLike, onSave, onComments, onShare, onAvatar }: Props) {
-  const [following, setFollowing] = useState(false);
+export function ActionRail({
+  post,
+  liked,
+  saved,
+  likeCount,
+  saveCount,
+  canFollow,
+  spinning,
+  onLike,
+  onSave,
+  onFollow,
+  onComments,
+  onShare,
+  onAvatar,
+}: Props) {
   const isLive = post.kind === 'live';
 
   return (
@@ -40,8 +58,8 @@ export function ActionRail({ post, liked, saved, spinning, onLike, onSave, onCom
             <Text style={styles.liveBadgeText}>LIVE</Text>
           </LinearGradient>
         ) : (
-          !following && (
-            <Pressable onPress={() => setFollowing(true)} hitSlop={8} style={styles.followBtn}>
+          canFollow && (
+            <Pressable onPress={onFollow} hitSlop={8} style={styles.followBtn}>
               <Ionicons name="add" size={16} color={colors.bg} />
             </Pressable>
           )
@@ -51,7 +69,7 @@ export function ActionRail({ post, liked, saved, spinning, onLike, onSave, onCom
       <RailButton
         icon="heart"
         color={liked ? colors.gold : colors.white}
-        label={formatCount(post.likes + (liked ? 1 : 0))}
+        label={formatCount(Math.max(0, likeCount))}
         onPress={onLike}
         bounce={liked}
       />
@@ -62,7 +80,7 @@ export function ActionRail({ post, liked, saved, spinning, onLike, onSave, onCom
         <RailButton
           icon="bookmark"
           color={saved ? colors.gold : colors.white}
-          label={formatCount(post.saves + (saved ? 1 : 0))}
+          label={formatCount(Math.max(0, saveCount))}
           onPress={onSave}
           bounce={saved}
           size={32}

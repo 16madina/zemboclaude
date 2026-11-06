@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -17,6 +19,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme';
 import { formatCount } from '../utils/format';
 import { avatar, commentsFor, type Comment, type Post } from '../data/feed';
+import { useSession } from '../lib/session';
+import { addComment, ago, deleteComment, useComments } from '../post/social';
+
+const ME_AVATAR = require('../../assets/icon.png');
 
 const EMOJIS = ['😍', '😂', '🔥', '👏🏾', '🥰', '😮', '🙏🏾', '💛'];
 
@@ -27,26 +33,75 @@ export function CommentsSheet({ post, onClose }: { post: Post | null; onClose: (
   const [items, setItems] = useState<Comment[]>([]);
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
   const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const { user, profile, guest, requireAuth } = useSession();
+  const real = !!post?.uid;
+  const live = useComments(post);
 
   useEffect(() => {
     if (post) {
-      setItems(commentsFor(post));
+      setItems(post.uid ? [] : commentsFor(post));
       setLikedIds({});
       setText('');
     }
   }, [post]);
 
-  const send = () => {
+  // vrais commentaires (publications des membres) au même format que les exemples
+  const shown: (Comment & { uid?: string })[] = real
+    ? live.items.map((c) => ({
+        id: c.id,
+        uid: c.uid,
+        user: c.pseudo,
+        avatar: ME_AVATAR,
+        text: c.text,
+        time: ago(c.createdAt),
+        likes: 0,
+        replies: 0,
+      }))
+    : items;
+
+  const send = async () => {
     const t = text.trim();
-    if (!t || !post) return;
-    setItems((c) => [
-      { id: `me-${Date.now()}`, user: 'toi', avatar: avatar(32), text: t, time: "à l'instant", likes: 0, replies: 0 },
-      ...c,
-    ]);
-    setText('');
+    if (!t || !post || sending) return;
+    if (!real) {
+      setItems((c) => [
+        { id: `me-${Date.now()}`, user: 'toi', avatar: avatar(32), text: t, time: "à l'instant", likes: 0, replies: 0 },
+        ...c,
+      ]);
+      setText('');
+      return;
+    }
+    if (!user) {
+      if (guest) Alert.alert('Crée ton compte', 'En mode test sans compte, tu ne peux pas commenter.');
+      else requireAuth('Connecte-toi pour commenter.');
+      return;
+    }
+    setSending(true);
+    try {
+      await addComment(
+        post.id,
+        { uid: user.uid, pseudo: profile?.pseudo || 'membre', name: [profile?.prenom, profile?.nom].filter(Boolean).join(' ') },
+        t,
+      );
+      setText('');
+    } catch {
+      Alert.alert('Oups', 'Ton commentaire n’est pas parti. Réessaie.');
+    } finally {
+      setSending(false);
+    }
   };
 
-  const total = (post?.comments ?? 0) + items.filter((i) => i.user === 'toi').length;
+  // appui long : supprimer son commentaire (ou un commentaire sur sa propre publication)
+  const askDelete = (c: { id: string; uid?: string }) => {
+    if (!post || !real || !user) return;
+    if (c.uid !== user.uid && post.uid !== user.uid) return;
+    Alert.alert('Supprimer ce commentaire ?', undefined, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: () => deleteComment(post.id, c.id).catch(() => {}) },
+    ]);
+  };
+
+  const total = real ? Math.max(post?.comments ?? 0, live.items.length) : (post?.comments ?? 0) + items.filter((i) => i.user === 'toi').length;
 
   return (
     <Modal visible={!!post} transparent animationType="slide" onRequestClose={onClose}>
@@ -60,15 +115,22 @@ export function CommentsSheet({ post, onClose }: { post: Post | null; onClose: (
             </Pressable>
           </View>
 
+          {real && !live.ready && <ActivityIndicator color={colors.gold} style={{ marginTop: 30 }} />}
+          {real && live.ready && shown.length === 0 && (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyTitle}>Pas encore de commentaire</Text>
+              <Text style={styles.emptySub}>Sois la première personne à réagir 💛</Text>
+            </View>
+          )}
           <FlatList
-            data={items}
+            data={shown}
             keyExtractor={(i) => i.id}
             contentContainerStyle={{ paddingBottom: 12 }}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => {
               const liked = !!likedIds[item.id];
               return (
-                <View style={styles.row}>
+                <Pressable style={styles.row} onLongPress={() => askDelete(item)} delayLongPress={350}>
                   <Image source={item.avatar} style={styles.avatar} />
                   <View style={styles.body}>
                     <Text style={styles.user}>
@@ -78,7 +140,7 @@ export function CommentsSheet({ post, onClose }: { post: Post | null; onClose: (
                     <Text style={styles.text}>{item.text}</Text>
                     <View style={styles.meta}>
                       <Text style={styles.metaText}>{item.time}</Text>
-                      <Text style={[styles.metaText, styles.reply]}>Répondre</Text>
+                      {!real && <Text style={[styles.metaText, styles.reply]}>Répondre</Text>}
                     </View>
                     {item.replies > 0 && (
                       <Text style={styles.moreReplies}>
@@ -86,15 +148,17 @@ export function CommentsSheet({ post, onClose }: { post: Post | null; onClose: (
                       </Text>
                     )}
                   </View>
-                  <Pressable
-                    style={styles.likeCol}
-                    hitSlop={8}
-                    onPress={() => setLikedIds((l) => ({ ...l, [item.id]: !l[item.id] }))}
-                  >
-                    <Ionicons name={liked ? 'heart' : 'heart-outline'} size={18} color={liked ? colors.gold : colors.textDim} />
-                    <Text style={styles.likeCount}>{formatCount(item.likes + (liked ? 1 : 0))}</Text>
-                  </Pressable>
-                </View>
+                  {!real && (
+                    <Pressable
+                      style={styles.likeCol}
+                      hitSlop={8}
+                      onPress={() => setLikedIds((l) => ({ ...l, [item.id]: !l[item.id] }))}
+                    >
+                      <Ionicons name={liked ? 'heart' : 'heart-outline'} size={18} color={liked ? colors.gold : colors.textDim} />
+                      <Text style={styles.likeCount}>{formatCount(item.likes + (liked ? 1 : 0))}</Text>
+                    </Pressable>
+                  )}
+                </Pressable>
               );
             }}
           />
@@ -108,11 +172,11 @@ export function CommentsSheet({ post, onClose }: { post: Post | null; onClose: (
               ))}
             </View>
             <View style={styles.inputRow}>
-              <Image source={avatar(32)} style={styles.meAvatar} />
+              <Image source={real ? ME_AVATAR : avatar(32)} style={styles.meAvatar} />
               <View style={styles.inputBox}>
                 <TextInput
                   value={text}
-                  onChangeText={setText}
+                  onChangeText={(t) => setText(t.slice(0, 500))}
                   placeholder="Ajouter un commentaire..."
                   placeholderTextColor={colors.textFaint}
                   style={styles.input}
@@ -120,8 +184,8 @@ export function CommentsSheet({ post, onClose }: { post: Post | null; onClose: (
                   returnKeyType="send"
                 />
                 {text.trim() ? (
-                  <Pressable onPress={send} style={styles.sendBtn}>
-                    <Ionicons name="arrow-up" size={18} color={colors.bg} />
+                  <Pressable onPress={send} style={[styles.sendBtn, sending && { opacity: 0.5 }]} disabled={sending}>
+                    {sending ? <ActivityIndicator size="small" color={colors.bg} /> : <Ionicons name="arrow-up" size={18} color={colors.bg} />}
                   </Pressable>
                 ) : (
                   <View style={styles.inputIcons}>
@@ -162,6 +226,9 @@ const styles = StyleSheet.create({
   moreReplies: { color: colors.textDim, fontSize: 13, fontWeight: '600', marginTop: 10 },
   likeCol: { alignItems: 'center', width: 40, paddingTop: 14 },
   likeCount: { color: colors.textFaint, fontSize: 12, marginTop: 2 },
+  emptyBox: { alignItems: 'center', paddingTop: 40 },
+  emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  emptySub: { color: colors.textDim, fontSize: 14, marginTop: 6 },
   composer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,

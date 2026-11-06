@@ -7,6 +7,7 @@ import type { Post } from '../data/feed';
 import { VideoPost } from './VideoPost';
 import { CommentsSheet } from './CommentsSheet';
 import { ShareSheet } from './ShareSheet';
+import { UserProfile, type ProfileTarget } from '../post/UserProfile';
 
 // Lecteur plein écran ouvert depuis une grille (Découvrir, Profil, messages)
 export function VideoViewer({ posts, start, onClose }: { posts: Post[]; start: number | null; onClose: () => void }) {
@@ -30,6 +31,8 @@ function Viewer({ posts, start, onClose }: { posts: Post[]; start: number; onClo
   const openComments = useCallback((p: Post) => setCommentsFor(p), []);
   const openShare = useCallback((p: Post) => setShareFor(p), []);
   const noop = useCallback(() => {}, []);
+  const [profileOf, setProfileOf] = useState<ProfileTarget | null>(null);
+  const openProfile = useCallback((p: Post) => p.uid && setProfileOf({ uid: p.uid, pseudo: p.user.handle, name: p.user.name }), []);
 
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
@@ -39,7 +42,15 @@ function Viewer({ posts, start, onClose }: { posts: Post[]; start: number; onClo
             data={posts}
             keyExtractor={(p, i) => `${p.id}-${i}`}
             renderItem={({ item, index }) => (
-              <VideoPost post={item} height={height} isActive={index === active} onComments={openComments} onShare={openShare} onOpenLive={noop} />
+              <VideoPost
+                post={item}
+                height={height}
+                isActive={index === active && !profileOf}
+                onComments={openComments}
+                onShare={openShare}
+                onOpenLive={noop}
+                onProfile={openProfile}
+              />
             )}
             initialScrollIndex={start}
             getItemLayout={(_, i) => ({ length: height, offset: height * i, index: i })}
@@ -57,6 +68,7 @@ function Viewer({ posts, start, onClose }: { posts: Post[]; start: number; onClo
       </Pressable>
       <CommentsSheet post={commentsFor} onClose={() => setCommentsFor(null)} />
       <ShareSheet post={shareFor} onClose={() => setShareFor(null)} />
+      <UserProfile target={profileOf} onClose={() => setProfileOf(null)} />
     </View>
   );
 }
