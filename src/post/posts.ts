@@ -18,6 +18,7 @@ import { ImageFormat, Skia, type SkImage } from '@shopify/react-native-skia';
 import { File, Paths } from 'expo-file-system';
 import { app, auth, db } from '../lib/firebase';
 import type { Post } from '../data/feed';
+import type { PostEdit } from './edit';
 
 // Publications des membres (vidéos et photos) :
 // - le fichier et sa miniature vont dans Firebase Storage (posts/{uid}/{id}/…)
@@ -45,6 +46,7 @@ export type PostDoc = {
   comments: number;
   shares: number;
   saves: number;
+  edit?: PostEdit;
 };
 
 /** Fiche Firestore -> publication affichable dans le fil */
@@ -67,6 +69,7 @@ export function toPost(id: string, d: DocumentData): Post {
     comments: p.comments ?? 0,
     saves: p.saves ?? 0,
     shares: p.shares ?? 0,
+    edit: p.edit ?? undefined,
   };
 }
 
@@ -146,10 +149,10 @@ async function photoFiles(uri: string) {
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function videoThumb(uri: string) {
+async function videoThumb(uri: string, atMs = 300) {
   try {
     const video = await Skia.Video(uri);
-    video.seek(300);
+    video.seek(Math.max(0, atMs));
     let frame: SkImage | null = null;
     for (let i = 0; i < 30 && !frame; i++) {
       frame = video.nextImage();
@@ -229,6 +232,8 @@ export type NewPost = {
   caption: string;
   pseudo: string;
   name: string;
+  /** montage (éditeur) */
+  edit?: PostEdit;
 };
 
 /** Envoie le fichier (vidéo compressée), sa miniature, puis crée la publication. onProgress va de 0 à 1.
@@ -252,7 +257,7 @@ export async function publishPost(p: NewPost, onProgress?: (r: number) => void) 
     url = await upload(`${base}/photo.jpg`, await tempFile(main.bytes, 'photo.jpg'), 'image/jpeg', (r) => onProgress?.(0.05 + r * 0.85));
     if (t) thumb = await upload(`${base}/thumb.jpg`, await tempFile(t.bytes, 'thumb.jpg'), 'image/jpeg');
   } else {
-    const t = await videoThumb(p.uri);
+    const t = await videoThumb(p.uri, ((p.edit?.cover ?? p.edit?.start ?? 0.3) as number) * 1000);
     // 0 → 0,35 : compression ; 0,35 → 0,95 : envoi
     const light = await compressVideo(p.uri, (r) => onProgress?.(0.02 + r * 0.33));
     onProgress?.(0.35);
@@ -268,7 +273,8 @@ export async function publishPost(p: NewPost, onProgress?: (r: number) => void) 
     thumb,
     width,
     height,
-    duration: p.duration,
+    duration: p.edit?.end !== undefined || p.edit?.start ? Math.max(1, (p.edit?.end ?? p.duration ?? 0) - (p.edit?.start ?? 0)) : p.duration,
+    ...(p.edit && Object.keys(p.edit).length ? { edit: p.edit } : {}),
     caption: p.caption.trim().slice(0, 300),
     hashtags: hashtagsOf(p.caption),
     pseudo: p.pseudo,

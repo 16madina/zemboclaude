@@ -25,6 +25,8 @@ import { auth } from '../lib/firebase';
 import { useSession } from '../lib/session';
 import { COMPRESS_END, hashtagsOf, publishPost, type MediaKind } from './posts';
 import { currentTag, useTagSuggestions } from './hashtags';
+import { EditorScreen } from './EditorScreen';
+import { FilterLayer, TextsLayer, useEditPlayback, type PostEdit } from './edit';
 
 // Publier une vidéo ou une photo sur l'accueil :
 // 1. choisir dans la galerie ou filmer / photographier
@@ -59,6 +61,8 @@ function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind;
   const insets = useSafeAreaInsets();
   const { profile } = useSession();
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [edit, setEdit] = useState<PostEdit>({});
+  const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState(initialCaption);
   const [progress, setProgress] = useState<number | null>(null);
   const isVideo = kind === 'video';
@@ -91,6 +95,9 @@ function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind;
         return;
       }
       setPicked({ uri: a.uri, width: a.width, height: a.height, duration: seconds });
+      setEdit({});
+      // on passe directement par l'éditeur
+      setEditing(true);
     } catch {
       Alert.alert('Oups', 'Impossible d’ouvrir ce fichier. Réessaie avec un autre.');
     }
@@ -105,6 +112,7 @@ function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind;
         {
           kind,
           ...picked,
+          edit,
           caption,
           pseudo: profile?.pseudo || 'membre',
           name: [profile?.prenom, profile?.nom].filter(Boolean).join(' ') || profile?.pseudo || 'Membre Zembo',
@@ -149,6 +157,22 @@ function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind;
     });
   };
 
+  if (picked && editing) {
+    return (
+      <EditorScreen
+        kind={kind}
+        uri={picked.uri}
+        duration={picked.duration}
+        initial={edit}
+        onBack={() => setEditing(false)}
+        onDone={(e) => {
+          setEdit(e);
+          setEditing(false);
+        }}
+      />
+    );
+  }
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.head}>
@@ -176,14 +200,20 @@ function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind;
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
             <View style={styles.preview}>
-              {isVideo ? <VideoPreview uri={picked.uri} /> : <Image source={picked.uri} style={StyleSheet.absoluteFill} contentFit="cover" />}
+              {isVideo ? <VideoPreview uri={picked.uri} edit={edit} /> : <Image source={picked.uri} style={StyleSheet.absoluteFill} contentFit="cover" />}
+              <FilterLayer id={edit.filter} />
+              <TextsLayer texts={edit.texts} width={200} height={356} />
+              <Pressable onPress={() => setEditing(true)} style={styles.modify} disabled={progress !== null}>
+                <Ionicons name="color-wand" size={15} color={colors.bg} />
+                <Text style={styles.modifyText}>Modifier</Text>
+              </Pressable>
               <Pressable onPress={() => setPicked(null)} style={styles.change} disabled={progress !== null}>
                 <Ionicons name="swap-horizontal" size={15} color="#fff" />
                 <Text style={styles.changeText}>Changer</Text>
               </Pressable>
               {isVideo && !!picked.duration && (
                 <View style={styles.duration}>
-                  <Text style={styles.changeText}>{Math.round(picked.duration)} s</Text>
+                  <Text style={styles.changeText}>{Math.round((edit.end ?? picked.duration) - (edit.start ?? 0))} s</Text>
                 </View>
               )}
             </View>
@@ -266,12 +296,15 @@ function Body({ kind, initialCaption, onClose, onPublished }: { kind: MediaKind;
   );
 }
 
-function VideoPreview({ uri }: { uri: string }) {
+function VideoPreview({ uri, edit }: { uri: string; edit: PostEdit }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
     p.muted = true;
+    p.timeUpdateEventInterval = 0.1;
     p.play();
   });
+  // aperçu muet : on garde la coupe, pas la musique
+  useEditPlayback(player, { start: edit.start, end: edit.end }, true);
   return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />;
 }
 
@@ -333,6 +366,19 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
+  modify: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.gold,
+  },
+  modifyText: { color: colors.bg, fontSize: 12.5, fontWeight: '900' },
   changeText: { color: '#fff', fontSize: 12.5, fontWeight: '800' },
   duration: { position: 'absolute', bottom: 10, left: 10, paddingHorizontal: 8, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center' },
   label: { color: colors.textDim, fontSize: 12, fontWeight: '900', letterSpacing: 1.5, marginTop: 20, marginBottom: 8 },

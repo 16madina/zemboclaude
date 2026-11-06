@@ -1,4 +1,5 @@
 // Données de démonstration. Plus tard, elles viendront du backend Zembo.
+import type { PostEdit } from '../post/edit';
 
 export type User = {
   handle: string;
@@ -18,6 +19,8 @@ export type Post = {
   /** auteur (publications réelles) */
   uid?: string;
   createdAt?: number;
+  /** montage appliqué à la lecture (coupe, son, musique, textes, filtre) */
+  edit?: PostEdit;
   user: User;
   caption: string;
   hashtags: string[];

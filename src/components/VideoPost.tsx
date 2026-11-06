@@ -12,6 +12,8 @@ import { ActionRail } from './ActionRail';
 import { PostInfo } from './PostInfo';
 import { useSession } from '../lib/session';
 import { setFollow, setLike, setSaved, useFollows, useLiked, useSaved } from '../post/social';
+import { FilterLayer, TextsLayer, useEditPlayback } from '../post/edit';
+import { useWindowDimensions } from 'react-native';
 
 type Props = {
   post: Post;
@@ -35,6 +37,8 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
   });
 
   const [paused, setPaused] = useState(false);
+  const { width } = useWindowDimensions();
+  useEditPlayback(player, post.edit, isActive && !paused);
   const { user, guest, requireAuth } = useSession();
   const me = user?.uid ?? null;
   const real = !!post.uid;
@@ -144,8 +148,11 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
         <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
       )}
 
+      <FilterLayer id={post.edit?.filter} />
+
       <LinearGradient colors={['rgba(0,0,0,0.45)', 'transparent']} style={styles.topShade} pointerEvents="none" />
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={styles.bottomShade} pointerEvents="none" />
+      <TextsLayer texts={post.edit?.texts} width={width} height={height} />
 
       <Pressable style={StyleSheet.absoluteFill} onPress={onTap}>
         {paused && (
@@ -176,17 +183,17 @@ export const VideoPost = memo(function VideoPost({ post, height, isActive, onCom
         onAvatar={isLive ? () => onOpenLive(post) : real && onProfile ? () => onProfile(post) : undefined}
       />
 
-      {!isLive && !isPhoto && <ProgressBar player={player} paused={paused} />}
+      {!isLive && !isPhoto && <ProgressBar player={player} paused={paused} start={post.edit?.start} end={post.edit?.end} />}
     </View>
   );
 });
 
 // Fine barre de progression dorée en bas de la vidéo
-function ProgressBar({ player, paused }: { player: VideoPlayer; paused: boolean }) {
+function ProgressBar({ player, paused, start = 0, end }: { player: VideoPlayer; paused: boolean; start?: number; end?: number }) {
   const ev = useEvent(player, 'timeUpdate');
   const t = ev?.currentTime ?? 0;
-  const d = player.duration || 0;
-  const pct = d > 0 ? Math.min(1, t / d) : 0;
+  const d = (end ?? player.duration ?? 0) - start;
+  const pct = d > 0 ? Math.min(1, Math.max(0, (t - start) / d)) : 0;
   return (
     <View style={[styles.progressTrack, paused && styles.progressTrackPaused]} pointerEvents="none">
       <View style={[styles.progressFill, { width: `${pct * 100}%` }]} />
