@@ -128,6 +128,17 @@ service cloud.firestore {
         allow delete: if isMe(uid) || (signedIn() && get(/databases/$(database)/documents/lives/$(room)).data.host == request.auth.uid);
         allow update: if false;
       }
+      // jeux à plusieurs : l'état de la partie, publié par l'hôte (l'arbitre), lisible par tous
+      match /game/{d} {
+        allow read: if signedIn();
+        allow write: if signedIn() && get(/databases/$(database)/documents/lives/$(room)).data.host == request.auth.uid;
+      }
+      // l'action de chaque joueur (sa saisie, sa réponse), lue seulement par l'hôte
+      match /moves/{uid} {
+        allow read: if isMe(uid) || (signedIn() && get(/databases/$(database)/documents/lives/$(room)).data.host == request.auth.uid);
+        allow create, update: if isMe(uid) && request.resource.data.size() <= 12;
+        allow delete: if false;
+      }
       // mains levées (« demander à parler ») : chacun la sienne ; l'hôte peut les baisser
       match /hands/{uid} {
         allow read: if signedIn();

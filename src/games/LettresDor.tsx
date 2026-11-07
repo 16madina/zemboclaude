@@ -15,7 +15,10 @@ import { findPerson } from '../world/data';
 import { useSession } from '../lib/session';
 import { auth } from '../lib/firebase';
 import { CameraFeed, CameraPreview, mediaAvailable, useLiveMedia } from '../live/media';
-import { useHostOnAir } from '../live/onair';
+import { sendLiveMessage, useHostOnAir, useLiveChatFeed, useWatching, type OnAirLive } from '../live/onair';
+import { useStage } from '../live/stage';
+import { Initial } from '../live/LiveViewer';
+import { publishGame, sendMove, shareDeep, unshareDeep, useGameState, useMoves } from './gameSync';
 import { PlayerSheet } from './PlayerSheet';
 import { BOTS, LEVEL_INFO } from './bots';
 import { LEVEL_LABEL, type Level } from './motdorEngine';
@@ -90,7 +93,8 @@ const PARTIE_MIN = 3; // durée moyenne d'une table, en minutes
 const CALL_TIME = 60; // appel « Prépare-toi » pendant la dernière épreuve de la table d'avant
 const CALL_TIME_LATE = 25; // appel au dernier moment (table connue seulement à la fin de la ronde)
 
-type Player = { id: string; name: string; photo: number | string; me?: boolean; level: BotLevel; score: number; last: number };
+/** real : vraie personne (uid Zembo) ; bot : joueur simulé qui complète la scène d'un vrai live */
+type Player = { id: string; name: string; photo: number | string; me?: boolean; level: BotLevel; score: number; last: number; real?: boolean; bot?: boolean };
 type Answer = { at: number; word?: string; value?: number; steps?: string[] };
 type RoundData =
   | { kind: 'L'; letters: string[]; sol: ReturnType<typeof solveLetters> }
@@ -181,7 +185,20 @@ const shuffle = <T,>(a: T[]) => {
 const chunk4 = <T,>(a: T[]) => Array.from({ length: Math.ceil(a.length / 4) }, (_, i) => a.slice(i * 4, i * 4 + 4));
 // classement général : points, puis points de jeu, puis victoires
 const sortStandings = (st: Record<string, Standing>) => Object.values(st).sort((a, b) => b.pts - a.pts || b.game - a.game || b.wins - a.wins);
-const nameOf = (p: Player) => (p.me ? 'Toi' : p.name);
+const nameOf = (p: Player) => (p.me ? 'Toi' : p.bot ? `${p.name} · IA` : p.name);
+
+/** Photo d'un joueur : sa photo, ou son initiale pour une vraie personne */
+function Face({ p, style }: { p: Player; style: object | object[] }) {
+  if (p.real && !p.me) {
+    const f = StyleSheet.flatten(style) as { width?: number };
+    return (
+      <View style={[style, { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]}>
+        <Initial name={p.name} size={Math.min(56, f.width ?? 56)} />
+      </View>
+    );
+  }
+  return <Image source={p.photo} style={style} contentFit="cover" />;
+}
 const pts = (n: number) => `${n} pt${n > 1 ? 's' : ''}`;
 const worldPlayer = (id: string, level: BotLevel): Player => {
   const p = findPerson(id);
@@ -218,7 +235,25 @@ const GIFTS: Gift[] = [
 
 /** `preview` : simple aperçu (live d'exemple de l'accueil), sans caméra en direct ni live sur l'accueil */
 /** instant : s'affiche tout de suite, sans glisser depuis le bas (live d'exemple ouvert depuis l'accueil) */
-export function LettresDor({ open, onClose, preview, quiet, muted, instant }: { open: boolean; onClose: () => void; preview?: boolean; quiet?: boolean; muted?: boolean; instant?: boolean }) {
+/** follow : les Lettres d'Or en direct d'un autre membre (on regarde, on peut demander à monter) */
+export function LettresDor({
+  open,
+  onClose,
+  preview,
+  quiet,
+  muted,
+  instant,
+  follow,
+}: {
+  open: boolean;
+  onClose: () => void;
+  preview?: boolean;
+  quiet?: boolean;
+  muted?: boolean;
+  instant?: boolean;
+  follow?: OnAirLive;
+}) {
+  if (follow) return <Game onClose={onClose} follow={follow} />;
   // quiet : aperçu dans le fil d'accueil (sans glissade, sans son, sans vibration)
   if (quiet) return <Game onClose={onClose} preview quiet muted={muted} />;
   if (instant) return <Game onClose={onClose} preview={preview} />;
@@ -229,15 +264,20 @@ export function LettresDor({ open, onClose, preview, quiet, muted, instant }: { 
   );
 }
 
-function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview?: boolean; quiet?: boolean; muted?: boolean }) {
+function Game({ onClose, preview, quiet, muted, follow }: { onClose: () => void; preview?: boolean; quiet?: boolean; muted?: boolean; follow?: OnAirLive }) {
   useQuiet(quiet);
+  // follower : on suit la partie d'un autre (son téléphone est l'arbitre) ; sinon c'est nous l'hôte
+  const follower = !!follow;
+  const myUid = auth.currentUser?.uid ?? '';
+  // vrai live (hôte connecté, vraie caméra) : pas de commentaires ni de demandes simulés
+  const realHost = !preview && !follower && mediaAvailable && !!myUid;
   const sfx = useSfx(!muted);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const T = insets.top;
   const { profile } = useSession();
   const toast = useToast();
-  const chat = useLiveChat(CHAT0, AUTO, 3800);
+  const chat = useLiveChat(realHost || follower ? [] : CHAT0, realHost || follower ? [] : AUTO, 3800);
   const floaters = useFloaters();
   const [giftOpen, setGiftOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -331,9 +371,13 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
   // tu vérifies ta caméra avant le direct ; ensuite tu peux couper ton micro et retourner la caméra
   const [camReady, setCamReady] = useState(false);
   const [myMic, setMyMic] = useState(true);
-  const liveRoom = !preview && mediaAvailable && !training && !['mode', 'level'].includes(phase) && auth.currentUser ? `lettres-${auth.currentUser.uid}` : null;
-  const media = useLiveMedia(liveRoom, {
-    publish: camReady && meOnStage && !['mode', 'size', 'signup', 'camcheck'].includes(phase),
+  const liveRoom = !follower && !preview && mediaAvailable && !training && !['mode', 'level'].includes(phase) && auth.currentUser ? `lettres-${auth.currentUser.uid}` : null;
+  // la salle partagée : la mienne si je suis l'hôte, celle de l'hôte si je le suis
+  const sharedRoom = follower ? follow!.room : liveRoom;
+  const st = useStage(sharedRoom, { host: !follower, slots: 3, pseudo: profile?.pseudo });
+  useWatching(follower ? follow!.room : null);
+  const media = useLiveMedia(sharedRoom, {
+    publish: follower ? meOnStage && phase !== 'mode' : camReady && meOnStage && !['mode', 'size', 'signup', 'camcheck'].includes(phase),
     mic: myMic && phase !== 'play',
     name: profile?.pseudo,
   });
@@ -383,7 +427,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   // ── des spectateurs demandent à monter de temps en temps ──
   useEffect(() => {
-    if (phase === 'mode' || phase === 'level' || group || training) return;
+    if (phase === 'mode' || phase === 'level' || group || training || follower || realHost) return;
     const t = setInterval(() => {
       setQueue((q) => {
         if (q.length >= 6) return q;
@@ -398,7 +442,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   // ── championnat : les spectateurs s'inscrivent jusqu'à ce que le groupe soit complet ──
   useEffect(() => {
-    if (phase !== 'signup' || signups.length >= lgSize) return;
+    if (phase !== 'signup' || signups.length >= lgSize || follower) return;
     const t = setTimeout(
       () => {
         const taken = new Set(signups.map((p) => p.name));
@@ -497,7 +541,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
   };
 
   useEffect(() => {
-    if (phase !== 'tableEnd' || !tableEnd) return;
+    if (phase !== 'tableEnd' || !tableEnd || follower) return;
     const meNext = tableEnd.next.some((p) => p.me);
     const mustConfirm = meNext && !stage.some((p) => p.me);
     if (mustConfirm && ready === null) return; // on attend ta réponse à l'appel « Prépare-toi »
@@ -526,7 +570,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   // ── appel « Prépare-toi » : pendant la dernière épreuve de la table d'avant, ou à la fin de la ronde ──
   useEffect(() => {
-    if (!group || callUp || ready !== null || meOnStage) return;
+    if (!group || callUp || ready !== null || meOnStage || follower) return;
     const lastEpreuve = epreuve === STAGE.rounds.length - 1 && ['intro', 'choose', 'draw', 'play'].includes(phase);
     let left = 0;
     if (lastEpreuve && nextTable?.some((p) => p.me)) left = CALL_TIME;
@@ -540,7 +584,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   // compte à rebours : sans réponse, tu es absent pour cette table
   useEffect(() => {
-    if (!callUp) return;
+    if (!callUp || follower) return;
     if (callLeft <= 0) {
       setReady(false);
       setCallUp(false);
@@ -567,7 +611,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   // ── 1. Intro de l'épreuve ──
   useEffect(() => {
-    if (phase !== 'intro') return;
+    if (phase !== 'intro' || follower) return;
     const t = setTimeout(() => {
       setMine(null);
       setElapsed(0);
@@ -587,7 +631,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
         const { plaques, target } = drawNumbers();
         const s = solveNumbers(plaques, target);
         const answers: Record<string, Answer | null> = {};
-        for (const b of stage.filter((p) => !p.me)) {
+        for (const b of stage.filter((p) => !p.me && !p.real)) {
           const c = botCount(s.reach, target, b.level);
           answers[b.id] = Math.random() < 0.05 ? null : { at: rand(0.35, 0.92) * duration, value: c.value, steps: c.steps };
         }
@@ -624,6 +668,10 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
   // ── 2a. Lettres : chaque joueur choisit Voyelle ou Consonne à son tour ──
   const choose = (want: 'V' | 'C') => {
     if (phase !== 'choose' || letters.length >= LETTER_COUNT) return;
+    if (follower) {
+      if (chooser?.me) sendMove(follow!.room, { pick: want, seq: Date.now() }).catch(() => {});
+      return;
+    }
     const v = letters.filter(isVowel).length;
     const c = letters.length - v;
     const remaining = LETTER_COUNT - letters.length;
@@ -637,12 +685,20 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   useEffect(() => {
     if (phase !== 'choose') return;
+    if (follower) {
+      // chez un joueur : le compte à rebours de mon choix (l'hôte tire la lettre)
+      if (!chooser?.me || letters.length >= LETTER_COUNT) return;
+      void hx.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      setChooseLeft(CHOOSE_TIME);
+      const t = setInterval(() => setChooseLeft((x) => x - 1), 1000);
+      return () => clearInterval(t);
+    }
     if (letters.length >= LETTER_COUNT) {
       // tirage complet : on cherche les solutions et on lance le chrono
       const t = setTimeout(() => {
         const sol = solveLetters(letters);
         const answers: Record<string, Answer | null> = {};
-        for (const b of stage.filter((p) => !p.me)) {
+        for (const b of stage.filter((p) => !p.me && !p.real)) {
           const w = botWord(sol, b.level);
           answers[b.id] = !w || Math.random() < 0.05 ? null : { at: rand(0.27, 0.9) * duration, word: w };
         }
@@ -650,6 +706,11 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
         setData({ kind: 'L', letters, sol });
         setPhase('play');
       }, 700);
+      return () => clearTimeout(t);
+    }
+    if (chooser.real) {
+      // un vrai joueur choisit chez lui ; trop tard, le jeu choisit pour lui
+      const t = setTimeout(() => choose(Math.random() < 0.45 ? 'V' : 'C'), (CHOOSE_TIME + 1) * 1000);
       return () => clearTimeout(t);
     }
     if (!chooser.me) {
@@ -669,13 +730,13 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   // trop tard : le jeu choisit pour toi
   useEffect(() => {
-    if (phase === 'choose' && chooser?.me && chooseLeft <= 0 && letters.length < LETTER_COUNT) choose(Math.random() < 0.45 ? 'V' : 'C');
+    if (!follower && phase === 'choose' && chooser?.me && chooseLeft <= 0 && letters.length < LETTER_COUNT) choose(Math.random() < 0.45 ? 'V' : 'C');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chooseLeft]);
 
   // ── 2b. Chiffres : les plaques apparaissent une par une ──
   useEffect(() => {
-    if (phase !== 'draw' || !data || data.kind !== 'C') return;
+    if (phase !== 'draw' || !data || data.kind !== 'C' || follower) return;
     const total = data.plaques.length + 1;
     if (shown >= total) {
       const t = setTimeout(() => setPhase('play'), 500);
@@ -692,21 +753,159 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
   }, [phase, data, shown]);
 
   // ── 3. Le chrono ──
+  const playStartRef = useRef(0);
   useEffect(() => {
     if (phase !== 'play') return;
+    if (follower) {
+      // chez un joueur : le chrono suit l'heure de départ donnée par l'hôte
+      const t = setInterval(() => setElapsed(Math.max(0, (Date.now() - playStartRef.current) / 1000)), TICK);
+      return () => clearInterval(t);
+    }
+    playStartRef.current = Date.now() - elapsed * 1000;
     const t = setInterval(() => setElapsed((e) => e + TICK / 1000), TICK);
     return () => clearInterval(t);
   }, [phase]);
 
+  const [sharedAnswered, setSharedAnswered] = useState<string[]>([]);
   const answered = (id: string) => {
     if (id === 'me') return !!mine;
+    if (follower) return sharedAnswered.includes(id);
     const a = botAnswers.current[id];
     return !!a && a.at <= elapsed;
   };
   const allAnswered = stage.every((p) => answered(p.id));
 
+  // ══ partie à plusieurs ══
+  const answeredKey = stage
+    .filter((p) => answered(p.id))
+    .map((p) => p.id)
+    .join(',');
+  // ── hôte : publie l'état de la partie (jamais les réponses avant la révélation) ──
   useEffect(() => {
-    if (phase !== 'play') return;
+    if (!liveRoom) return;
+    const dataShared =
+      data?.kind === 'L'
+        ? { kind: 'L', letters: data.letters, sol: { words: data.sol.words.slice(0, 3), common: [] } }
+        : data
+          ? { kind: 'C', plaques: data.plaques, target: data.target, best: data.best, bestSteps: data.bestSteps }
+          : null;
+    const state = {
+      phase, stage, queue, crowns, manche, stageIdx, epreuve, overlay, data: dataShared, shown, stoppedEarly,
+      results: phase === 'reveal' ? results : [], revealed, nextIn, letters, lastPick, format, lgSize, signups,
+      standings, ronde, tables, tableIdx, isFinal, tableEnd, champ, hostPlays, level,
+      answered: answeredKey ? answeredKey.split(',') : [],
+      playStartAt: playStartRef.current,
+    };
+    publishGame(liveRoom, { json: JSON.stringify(shareDeep(state, myUid, profile?.pseudo ?? 'Hôte')) }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveRoom, phase, stage, queue, crowns, manche, stageIdx, epreuve, overlay, data, shown, stoppedEarly, results, revealed, nextIn, letters, lastPick, format, lgSize, signups, standings, ronde, tables, tableIdx, isFinal, tableEnd, champ, hostPlays, level, answeredKey]);
+
+  // ── hôte : le choix voyelle/consonne et les réponses des vrais joueurs ──
+  useMoves(liveRoom, (m) => {
+    if (typeof m.pick === 'string' && phase === 'choose' && chooser?.id === m.uid) choose(m.pick === 'V' ? 'V' : 'C');
+    const ans = m.answer as Answer | undefined;
+    if (ans && phase === 'play' && stage.some((p) => p.id === m.uid) && !botAnswers.current[m.uid]) {
+      botAnswers.current = { ...botAnswers.current, [m.uid]: { ...ans, at: elapsed } };
+    }
+  });
+
+  // ── hôte : les vrais spectateurs qui demandent à monter entrent dans la file ──
+  useEffect(() => {
+    if (!liveRoom) return;
+    setQueue((q) => {
+      const ids = new Set(st.requests.map((r) => r.uid));
+      let next = q.filter((p) => !p.real || ids.has(p.id));
+      for (const r of st.requests) {
+        if (next.some((p) => p.id === r.uid) || stage.some((p) => p.id === r.uid)) continue;
+        next = [...next, { id: r.uid, name: r.pseudo || 'Invité', photo: '', level: LEVELS[0], score: 0, last: 0, real: true }];
+        chat.push(r.pseudo || 'Invité', '🙋 demande à monter sur scène');
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveRoom, st.requests]);
+
+  // ── joueur / spectateur : la partie telle que l'hôte la publie ──
+  const snap = useGameState<{ json?: string }>(follower ? follow!.room : null);
+  const lastPhase = useRef<Phase | null>(null);
+  useEffect(() => {
+    if (!follower || !snap?.json) return;
+    let g: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    try {
+      g = unshareDeep(JSON.parse(snap.json), myUid, (id, name) => findPerson(id)?.photo ?? faceOf(name, 300)) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    } catch {
+      return;
+    }
+    setStage((g.stage ?? []).map((p: Player) => ({ ...p, bot: !p.real && !p.me })));
+    setQueue(g.queue ?? []);
+    setCrowns(g.crowns ?? {});
+    setManche(g.manche ?? 1);
+    setStageIdx(g.stageIdx ?? 0);
+    setEpreuve(g.epreuve ?? 0);
+    setOverlay(g.overlay ?? null);
+    const d = g.data;
+    setData(d ? (d.kind === 'L' ? d : { ...d, reach: new Map() }) : null);
+    setShown(g.shown ?? 0);
+    setStoppedEarly(!!g.stoppedEarly);
+    setResults(g.results ?? []);
+    setRevealed(g.revealed ?? 0);
+    setNextIn(g.nextIn ?? 0);
+    setLetters(g.letters ?? []);
+    setLastPick(g.lastPick ?? null);
+    setFormat(g.format ?? 'tournoi');
+    setLgSize(g.lgSize ?? 16);
+    setSignups(g.signups ?? []);
+    setStandings(g.standings ?? {});
+    setRonde(g.ronde ?? 1);
+    setTables(g.tables ?? []);
+    setTableIdx(g.tableIdx ?? 0);
+    setIsFinal(!!g.isFinal);
+    setTableEnd(g.tableEnd ?? null);
+    setChamp(g.champ ?? null);
+    setHostPlays(!!g.hostPlays);
+    if (g.level) setLevel(g.level);
+    setSharedAnswered(g.answered ?? []);
+    playStartRef.current = g.playStartAt ?? 0;
+    if (g.phase !== lastPhase.current) {
+      // nouvelle épreuve : je repars d'une saisie vide
+      if (g.phase === 'intro' || g.phase === 'choose' || g.phase === 'draw') {
+        setMine(null);
+        setPicked([]);
+        setSel(null);
+        setOp(null);
+        setSteps([]);
+        setElapsed(0);
+        if (d?.kind === 'C') setItems(d.plaques.map((v: number) => ({ v, used: false })));
+      }
+      if (g.phase === 'play' && d?.kind === 'C' && !items.length) setItems(d.plaques.map((v: number) => ({ v, used: false })));
+      lastPhase.current = g.phase;
+      setPhase(g.phase);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snap]);
+
+  // je viens de monter sur scène
+  const wasOnStage = useRef(false);
+  useEffect(() => {
+    if (follower && meOnStage && !wasOnStage.current && phase !== 'mode') toast.show('À toi ! Tu montes sur scène 🎤');
+    wasOnStage.current = meOnStage;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meOnStage]);
+
+  // les vrais commentaires du live (chez un spectateur)
+  const feed = useLiveChatFeed(follower ? follow!.room : null, 20);
+  const seenMsgs = useRef(new Set<string>());
+  useEffect(() => {
+    for (const m of feed) {
+      if (seenMsgs.current.has(m.id)) continue;
+      seenMsgs.current.add(m.id);
+      if (m.uid !== myUid) chat.push(m.pseudo, m.text);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feed]);
+
+  useEffect(() => {
+    if (phase !== 'play' || follower) return;
     if (allAnswered || elapsed >= duration) finish(allAnswered && elapsed < duration);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elapsed, allAnswered, phase]);
@@ -725,9 +924,11 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
     if (data?.kind === 'L') {
       if (myWord.length < 2) return toast.show('Forme un mot avec les lettres');
       setMine({ at: elapsed, word: myWord });
+      if (follower) sendMove(follow!.room, { answer: { word: myWord }, seq: Date.now() }).catch(() => {});
     } else {
       if (myValue === null) return toast.show('Choisis une plaque ou fais un calcul');
       setMine({ at: elapsed, value: myValue, steps: steps.map((s) => s.text) });
+      if (follower) sendMove(follow!.room, { answer: { value: myValue, steps: steps.map((s) => s.text) }, seq: Date.now() }).catch(() => {});
     }
     void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   };
@@ -774,7 +975,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   // ── 5. Révélation une par une ──
   useEffect(() => {
-    if (phase !== 'reveal') return;
+    if (phase !== 'reveal' || follower) return;
     if (revealed > results.length) {
       if (nextIn <= 0) return;
       const t = setTimeout(() => setNextIn((n) => n - 1), 1000);
@@ -800,7 +1001,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
   }, [phase, revealed, results, nextIn]);
 
   useEffect(() => {
-    if (phase === 'reveal' && revealed > results.length && nextIn === 0) next();
+    if (!follower && phase === 'reveal' && revealed > results.length && nextIn === 0) next();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nextIn]);
 
@@ -843,7 +1044,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   // élimination : le dernier descend, on passe au tour suivant
   useEffect(() => {
-    if (phase !== 'elim' || !overlay) return;
+    if (phase !== 'elim' || !overlay || follower) return;
     const t = setTimeout(() => {
       const out = overlay.who;
       if (out.me) toast.show('Tu descends de la scène… Touche 🙋 pour redemander à monter.');
@@ -859,12 +1060,14 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
 
   // fin de manche : le gagnant reste, 3 joueurs de la file montent
   useEffect(() => {
-    if (phase !== 'champion' || !overlay?.up) return;
+    if (phase !== 'champion' || !overlay?.up || follower) return;
     const t = setTimeout(() => {
       const up = overlay.up!;
       const ids = up.map((p) => p.id);
       setStage([fresh(overlay.who), ...up.map(fresh)]);
       setQueue((q) => q.filter((p) => !ids.includes(p.id)));
+      const reals = [overlay.who, ...up].filter((p) => p.real);
+      if (liveRoom) st.setStageList(reals.map((p) => ({ uid: p.id, pseudo: p.name }))).catch(() => {});
       if (up.some((p) => p.me)) toast.show('À toi ! Tu montes sur scène 🎤');
       setManche((m) => m + 1);
       setStageIdx(0);
@@ -896,6 +1099,15 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
   const requestStage = () => {
     tap();
     if (meOnStage) return toast.show('Tu es déjà sur scène 🎤');
+    if (follower) {
+      // je demande à l'hôte : il me fera monter quand une place se libère
+      if (meQueued || st.role === 'requested') {
+        st.cancelRequest().catch(() => {});
+        return toast.show('Tu as quitté la file');
+      }
+      st.request(profile?.pseudo ?? 'Invité').catch(() => {});
+      return toast.show('Demande envoyée 🙋 L’hôte te fera monter');
+    }
     if (meQueued) {
       setQueue((q) => q.filter((p) => !p.me));
       return toast.show('Tu as quitté la file');
@@ -960,6 +1172,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
     tap();
     chat.push(profile?.pseudo ?? 'Toi', t, true);
     onAir.send(t);
+    if (follower) sendLiveMessage(follow!.room, profile?.pseudo ?? 'Invité', t).catch(() => {});
     setDraft('');
   };
   // toucher le nom de quelqu'un dans le chat pour lui répondre
@@ -1330,8 +1543,9 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
               }}
             >
               <View style={[styles.cam, { height: card4 * 1.6 }, p.me && styles.camMe, (flash || choosing) && styles.camFlash]}>
-                <Image source={p.photo} style={StyleSheet.absoluteFill} contentFit="cover" />
+                <Face p={p} style={StyleSheet.absoluteFill} />
                 {p.me && <CameraFeed trackRef={media.cameraOf('me')} mirror={media.facing === 'user'} style={StyleSheet.absoluteFill} />}
+                {!p.me && p.real && <CameraFeed trackRef={media.cameraOf(p.id)} style={StyleSheet.absoluteFill} />}
                 {p.me && media.status === 'on' && (
                   <View style={styles.camTools}>
                     <Pressable
@@ -1533,7 +1747,12 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
       {floaters.layer}
 
       {/* ── écrans par-dessus : mode, élimination, fin de manche, fin du tournoi ── */}
-      {(phase === 'mode' || phase === 'level') && (
+      {(phase === 'mode' || phase === 'level') && follower && (
+        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', padding: 30 }]} pointerEvents="none">
+          <Text style={{ color: '#fff', fontSize: 20, fontWeight: '900', textAlign: 'center' }}>La partie va commencer…</Text>
+        </View>
+      )}
+      {(phase === 'mode' || phase === 'level') && !follower && (
         <StartForm
           top={T + 56}
           format={format}
@@ -1602,8 +1821,8 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
           onClose={onClose}
         />
       )}
-      {phase === 'size' && <SizePicker top={T + 100} onPick={pickSize} onBack={() => setPhase('mode')} />}
-      {phase === 'signup' && <SignupCard top={T + 90} size={lgSize} players={signups} onStart={startLeague} onBack={() => setPhase('size')} />}
+      {phase === 'size' && !follower && <SizePicker top={T + 100} onPick={pickSize} onBack={() => setPhase('mode')} />}
+      {phase === 'signup' && !follower && <SignupCard top={T + 90} size={lgSize} players={signups} onStart={startLeague} onBack={() => setPhase('size')} />}
       {phase === 'tableEnd' && tableEnd && <TableEndCard t={tableEnd} general={general} top={T + 80} />}
       {phase === 'leagueEnd' && champ && <LeagueEndCard c={champ} general={general} top={T + 80} onRelaunch={() => setPhase('size')} onClose={onClose} />}
       {callUp && (
@@ -1664,7 +1883,7 @@ function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview
           {queue.map((p, i) => (
             <View key={p.id} style={styles.queueRow}>
               <Text style={styles.queuePos}>{i + 1}</Text>
-              <Image source={p.photo} style={styles.rankAv} />
+              <Face p={p} style={styles.rankAv} />
               <Text style={styles.queueName}>{nameOf(p)}</Text>
               {i < 3 && <Text style={styles.queueNext}>prochain</Text>}
             </View>
@@ -1952,7 +2171,7 @@ function StartForm({
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {players.map((p, i) => (
               <View key={p.id} style={{ flex: 1, alignItems: 'center' }}>
-                <Image source={p.photo} style={[styles.fAv, p.me && { borderColor: GOLD }]} />
+                <Face p={p} style={[styles.fAv, p.me && { borderColor: GOLD }]} />
                 <Text style={styles.upName} numberOfLines={1}>
                   {training ? nameOf(p) : `${i + 1}. ${nameOf(p)}`}
                 </Text>
@@ -2097,7 +2316,7 @@ function SignupCard({ top, size, players, onStart, onBack }: { top: number; size
           return (
             <View key={i} style={styles.signCell}>
               {p ? (
-                <Image source={p.photo} style={[styles.signAv, p.me && { borderColor: GOLD, borderWidth: 2.5 }]} />
+                <Face p={p} style={[styles.signAv, p.me && { borderColor: GOLD, borderWidth: 2.5 }]} />
               ) : (
                 <View style={[styles.signAv, styles.signEmpty]} />
               )}
@@ -2127,7 +2346,7 @@ function StandingsList({ general, limit, highlight }: { general: Standing[]; lim
   const row = (x: Standing, i: number) => (
     <View key={x.p.id} style={[styles.stRow, highlight?.includes(x.p.id) && styles.stHi, x.p.me && styles.stMe]}>
       <Text style={[styles.stPos, i < 4 && { color: GOLD }]}>{i + 1}</Text>
-      <Image source={x.p.photo} style={styles.stAv} />
+      <Face p={x.p} style={styles.stAv} />
       <Text style={styles.stName} numberOfLines={1}>
         {nameOf(x.p)}
       </Text>
@@ -2163,7 +2382,7 @@ function TableEndCard({ t, general, top }: { t: TableEnd; general: Standing[]; t
         return (
           <View key={p.id} style={[styles.rankRow, i === 0 && styles.rankWin, away && { opacity: 0.55 }]}>
             <Text style={styles.rankPos}>{i + 1}</Text>
-            <Image source={p.photo} style={styles.rankAv} />
+            <Face p={p} style={styles.rankAv} />
             <Text style={styles.rankName}>
               {nameOf(p)} <Text style={styles.rankSmall}>{away ? 'absent' : `${pts(p.score)} de jeu`}</Text>
             </Text>
@@ -2179,7 +2398,7 @@ function TableEndCard({ t, general, top }: { t: TableEnd; general: Standing[]; t
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
           {t.next.map((p) => (
             <View key={p.id} style={{ alignItems: 'center', flex: 1 }}>
-              <Image source={p.photo} style={styles.upAv} />
+              <Face p={p} style={styles.upAv} />
               <Text style={styles.upName} numberOfLines={1}>
                 {nameOf(p)}
               </Text>
@@ -2235,7 +2454,7 @@ function RankList({ ranking, crowns, highlight, out }: { ranking: Player[]; crow
       {ranking.map((p, i) => (
         <View key={p.id} style={[styles.rankRow, p.id === highlight && styles.rankWin, p.id === out && { opacity: 0.55 }]}>
           <Text style={styles.rankPos}>{i + 1}</Text>
-          <Image source={p.photo} style={styles.rankAv} />
+          <Face p={p} style={styles.rankAv} />
           <Text style={styles.rankName}>
             {nameOf(p)}
             {crowns?.[p.id] ? `  👑 ${crowns[p.id].n}` : ''}
@@ -2279,7 +2498,7 @@ function ChampionCard({ o, manche, crowns, top }: { o: Overlay; manche: number; 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
             {o.up.map((p) => (
               <View key={p.id} style={{ alignItems: 'center', flex: 1 }}>
-                <Image source={p.photo} style={styles.upAv} />
+                <Face p={p} style={styles.upAv} />
                 <Text style={styles.upName} numberOfLines={1}>
                   {nameOf(p)}
                 </Text>

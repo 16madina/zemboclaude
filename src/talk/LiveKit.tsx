@@ -53,6 +53,7 @@ export function useLiveChat(initial: [string, string][], auto: [string, string][
     setMsgs((m) => [...m.slice(-24), { id, user, text, tint: me ? colors.gold : TINTS[id % TINTS.length], me }]);
   };
   useEffect(() => {
+    if (!auto.length) return; // live réel : pas de commentaires simulés
     let last = -1;
     const t = setInterval(() => {
       let k = Math.floor(Math.random() * (auto.length - 1));

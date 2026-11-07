@@ -20,6 +20,8 @@ import { auth } from '../lib/firebase';
 import { TableRoom } from '../table/TableScreen';
 import { MicroReal } from '../talk/MicroOuvertReal';
 import { SlamReal } from '../talk/SlamReal';
+import { MotDor } from '../games/MotDor';
+import { LettresDor } from '../games/LettresDor';
 import { DemoPreview, DemoScene } from './DemoLive';
 import { Initial, Viewer } from './LiveViewer';
 import type { OnAirLive } from './onair';
@@ -112,6 +114,10 @@ function LiveScene({ live, onClose }: { live: OnAirLive; onClose: () => void }) 
       return <MicroReal hostRoom={live.room} start={live} onClose={onClose} />;
     case 'slam':
       return <SlamReal hostRoom={live.room} start={live} onClose={onClose} />;
+    case 'motdor':
+      return <MotDor open instant follow={live} onClose={onClose} />;
+    case 'lettres':
+      return <LettresDor open instant follow={live} onClose={onClose} />;
     default:
       return <Viewer start={live} onClose={onClose} />;
   }

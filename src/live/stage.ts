@@ -184,6 +184,15 @@ export function useStage(room: string | null, opts: { host: boolean; slots: numb
     await updateDoc(ref(), { stage: stage.map((x) => (x === uid ? '' : x)), muted: arrayRemove(uid) });
   };
 
+  /** L'hôte place d'un coup les personnes sur scène (jeux : les vrais joueurs de la partie) */
+  const setStageList = async (people: { uid: string; pseudo: string }[]) => {
+    if (!room) return;
+    const list = people.map((p) => p.uid).slice(0, stage.length || opts.slots);
+    const next = Array.from({ length: stage.length || opts.slots }, (_, i) => list[i] ?? '');
+    await updateDoc(ref(), { stage: next, ...Object.fromEntries(people.map((p) => [`names.${p.uid}`, p.pseudo.slice(0, 40)])) });
+    await Promise.all(people.map((p) => deleteDoc(doc(db, 'lives', room, 'requests', p.uid)).catch(() => {})));
+  };
+
   /** Je descends de la scène */
   const leave = async () => {
     if (!room || !me || !onStage) return;
@@ -259,6 +268,7 @@ export function useStage(room: string | null, opts: { host: boolean; slots: numb
     decline,
     remove,
     leave,
+    setStageList,
     toggleMute,
     setPerf,
     queue,
