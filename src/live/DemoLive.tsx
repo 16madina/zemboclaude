@@ -21,16 +21,16 @@ function DemoScene({ live, onClose, quiet, muted }: { live: OnAirLive; onClose: 
     case 'openmic':
       return <MicroLive onClose={onClose} quiet={quiet} />;
     case 'lettres':
-      return <LettresDor open preview quiet={quiet} muted={muted} onClose={onClose} />;
+      return <LettresDor open preview instant quiet={quiet} muted={muted} onClose={onClose} />;
     case 'motdor':
-      return <MotDor open preview quiet={quiet} muted={muted} onClose={onClose} />;
+      return <MotDor open preview instant quiet={quiet} muted={muted} onClose={onClose} />;
   }
 }
 
-/** Ouvre le live d'exemple en plein écran */
+/** Ouvre le live d'exemple en plein écran, tout de suite : on passe de l'aperçu du fil au live sans transition */
 export function DemoLive({ live, onClose }: { live: OnAirLive | null; onClose: () => void }) {
   return (
-    <Modal visible={!!live} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible={!!live} animationType="none" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaProvider>
         <View style={{ flex: 1, backgroundColor: '#000' }}>{live && <DemoScene live={live} onClose={onClose} />}</View>
       </SafeAreaProvider>

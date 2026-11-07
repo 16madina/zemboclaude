@@ -217,9 +217,11 @@ const GIFTS: Gift[] = [
 ];
 
 /** `preview` : simple aperçu (live d'exemple de l'accueil), sans caméra en direct ni live sur l'accueil */
-export function LettresDor({ open, onClose, preview, quiet, muted }: { open: boolean; onClose: () => void; preview?: boolean; quiet?: boolean; muted?: boolean }) {
+/** instant : s'affiche tout de suite, sans glisser depuis le bas (live d'exemple ouvert depuis l'accueil) */
+export function LettresDor({ open, onClose, preview, quiet, muted, instant }: { open: boolean; onClose: () => void; preview?: boolean; quiet?: boolean; muted?: boolean; instant?: boolean }) {
   // quiet : aperçu dans le fil d'accueil (sans glissade, sans son, sans vibration)
   if (quiet) return <Game onClose={onClose} preview quiet muted={muted} />;
+  if (instant) return <Game onClose={onClose} preview={preview} />;
   return (
     <LiveSlide open={open}>
       <Game onClose={onClose} preview={preview} />
