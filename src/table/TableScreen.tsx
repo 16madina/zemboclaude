@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
-  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -139,6 +138,8 @@ function TableView({ live, onClose, feed }: { live: TableLive; onClose: () => vo
         <Text style={styles.feltTitle} numberOfLines={4}>
           {config.title}
         </Text>
+        {/* la règle de la table, imprimée sur le feutre plutôt que dans le chat */}
+        <Text style={styles.feltRules} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>Respect · bienveillance · chacun son tour</Text>
       </View>
 
       {/* invités autour de la table */}
@@ -253,14 +254,10 @@ function LiveFooter({ live, onGift }: { live: TableLive; onGift: () => void }) {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.footer} pointerEvents="box-none">
       {/* commentaires : les plus récents en bas, les anciens s'effacent vers le haut */}
       <View style={styles.chatBox} pointerEvents="box-none">
-        <FlatList
-          inverted
-          data={recent}
-          keyExtractor={(m) => m.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingTop: 4 }}
-          renderItem={({ item, index }) => <ChatLine m={item} fade={Math.max(0.2, 1 - index * 0.2)} />}
-        />
+        {/* les derniers messages, empilés vers le bas : le plus récent juste au-dessus du champ */}
+        {[...recent.slice(0, 8)].reverse().map((m, i, arr) => (
+          <ChatLine key={m.id} m={m} fade={Math.max(0.2, 1 - (arr.length - 1 - i) * 0.2)} />
+        ))}
       </View>
 
       {/* réactions qui montent à droite */}
@@ -467,9 +464,11 @@ const styles = StyleSheet.create({
   wordmark: { color: '#f0c95a', fontSize: 15, fontWeight: '900', letterSpacing: 2 },
   feltRule: { width: 46, height: 1, backgroundColor: 'rgba(212,175,55,0.6)', marginVertical: 7 },
   feltLabel: { color: 'rgba(212,175,55,0.8)', fontSize: 8.5, fontWeight: '800', letterSpacing: 2.2, marginBottom: 4 },
+  feltRules: { color: 'rgba(212,175,55,0.75)', fontSize: 9.5, fontWeight: '700', marginTop: 8, textAlign: 'center' },
   feltTitle: { color: 'rgba(247,236,205,0.95)', fontSize: 16, fontWeight: '800', textAlign: 'center', lineHeight: 21 },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  chatBox: { height: 150, width: '78%', paddingLeft: 10 },
+  // les messages s'arrêtent net au-dessus du champ (rien ne passe dessous)
+  chatBox: { height: 150, width: '78%', paddingLeft: 10, marginBottom: 6, overflow: 'hidden', justifyContent: 'flex-end' },
   line: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -501,7 +500,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(212,175,55,0.25)',
   },
-  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingTop: 8 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingTop: 8, backgroundColor: 'rgba(5,3,2,0.92)' },
   inputBox: {
     flex: 1,
     height: 44,

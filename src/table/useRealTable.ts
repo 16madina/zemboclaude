@@ -9,7 +9,6 @@ import { now, type ChatMsg, type Seat, type TableConfig } from './data';
 import type { TableLive } from './useTableLive';
 
 const SHIRTS = ['#8C6A2E', '#5B2335', '#2F4A3A', '#B9B2A4', '#7A3B1E', '#2C3A55', '#4B3B63', '#6E5A2A'];
-const WELCOME: ChatMsg = { id: 'welcome', name: 'Zembo', time: '', text: 'Bienvenue à la table ! Respect et bienveillance, chacun son tour de parole.', system: true, at: 0 };
 
 /**
  * Zembo Table en vrai : les places, les caméras et les micros sont partagés par tout le monde.
@@ -79,7 +78,6 @@ export function useRealTable(config: TableConfig, hostRoom?: string): TableLive 
   const chat: ChatMsg[] = useMemo(
     () =>
       [
-        WELCOME,
         ...feed.map((m) => ({ id: m.id, name: m.pseudo, text: m.text, time: '', real: true, at: m.at })),
         ...notes,
       ].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),

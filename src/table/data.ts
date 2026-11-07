@@ -56,7 +56,6 @@ export const SPECTATORS = [
 export type ChatMsg = { id: string; name: string; time: string; text: string; gift?: boolean; system?: boolean; real?: boolean; at?: number };
 
 export const CHAT0: ChatMsg[] = [
-  { id: 'c0', name: 'Zembo', time: '', text: 'Bienvenue à la table ! Respect et bienveillance, chacun son tour de parole.', system: true },
   { id: 'c1', name: 'Ben', time: '21:33', text: 'Le sujet du jour est trop bien 🔥' },
   { id: 'c2', name: 'Emma', time: '21:34', text: "Moi je ne mélange jamais l'argent et l'amour." },
   { id: 'c3', name: 'Kader', time: '21:35', text: "On a tous nos limites, et c'est OK." },
