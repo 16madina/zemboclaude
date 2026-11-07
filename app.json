@@ -64,9 +64,9 @@
     ],
     "backgroundColor": "#050403",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash/zembo-splash-first.jpg",
       "resizeMode": "contain",
-      "backgroundColor": "#050403"
+      "backgroundColor": "#000000"
     },
     "owner": "missdee",
     "runtimeVersion": {

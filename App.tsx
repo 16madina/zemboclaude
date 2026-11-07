@@ -24,6 +24,7 @@ import type { TalkFormat } from './src/talk/TalkShowPicker';
 import { LettresDor } from './src/games/LettresDor';
 import { MotDor } from './src/games/MotDor';
 import { PublishScreen } from './src/post/PublishScreen';
+import { SplashVideo } from './src/components/SplashVideo';
 import type { MediaKind } from './src/post/posts';
 
 
@@ -58,6 +59,9 @@ function Main() {
   const [motOpen, setMotOpen] = useState(false);
   const [publish, setPublish] = useState<MediaKind | null>(null);
   const [homeTop, setHomeTop] = useState(0);
+  // animation d'ouverture : l'accueil attend qu'elle soit finie pour lancer ses vidéos
+  const [splash, setSplash] = useState(true);
+  const endSplash = useCallback(() => setSplash(false), []);
   // un onglet visité reste monté pour garder sa position et son état
   const [visited, setVisited] = useState<Record<string, boolean>>({ home: true });
   const onUnread = useCallback((n: number) => setInboxBadge(n), []);
@@ -77,7 +81,7 @@ function Main() {
         <View style={styles.content}>
           {/* L'accueil reste monté pour garder la position dans le fil */}
           <HomeScreen
-            focused={tab === 'home' && !createOpen && !setupOpen && !table && !worldOpen && !talkOpen && !talk && !gameOpen && !motOpen && !publish}
+            focused={!splash && tab === 'home' && !createOpen && !setupOpen && !table && !worldOpen && !talkOpen && !talk && !gameOpen && !motOpen && !publish}
             jumpTop={homeTop}
           />
           {visited.discover && (
@@ -149,6 +153,7 @@ function Main() {
           setHomeTop((n) => n + 1);
         }}
       />
+      {splash && <SplashVideo onDone={endSplash} />}
     </>
   );
 }
