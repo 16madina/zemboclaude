@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { hx, useQuiet } from '../live/quiet';
-import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
+import { useSfx } from './sfx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { goldGradient } from '../theme';
 import { FadeIn, GiftGrid, LiveSlide, Sheet, Toast, faceOf, tap, useFloaters, useLiveChat, useToast, type Gift } from '../talk/LiveKit';
@@ -118,38 +118,6 @@ const GIFTS: Gift[] = [
 ];
 const KEYS = ['AZERTYUIOP', 'QSDFGHJKLM', 'WXCVBN'];
 
-// ── Effets sonores (créés pour Mot d'Or) ──
-const SFX = {
-  key: require('../../assets/sounds/motdor/key.wav'),
-  ok: require('../../assets/sounds/motdor/ok.wav'),
-  near: require('../../assets/sounds/motdor/near.wav'),
-  no: require('../../assets/sounds/motdor/no.wav'),
-  win: require('../../assets/sounds/motdor/win.wav'),
-  fail: require('../../assets/sounds/motdor/fail.wav'),
-  turn: require('../../assets/sounds/motdor/turn.wav'),
-  tick: require('../../assets/sounds/motdor/tick.wav'),
-  bad: require('../../assets/sounds/motdor/bad.wav'),
-};
-type Sfx = keyof typeof SFX;
-function useSfx(on: boolean) {
-  const players = useRef<Partial<Record<Sfx, AudioPlayer>>>({});
-  const onRef = useRef(on);
-  onRef.current = on;
-  useEffect(() => {
-    if (!mediaAvailable) setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
-    for (const k of Object.keys(SFX) as Sfx[]) players.current[k] = createAudioPlayer(SFX[k]);
-    const all = players.current;
-    return () => Object.values(all).forEach((p) => p?.remove());
-  }, []);
-  return useCallback((k: Sfx) => {
-    if (!onRef.current) return;
-    const p = players.current[k];
-    if (!p) return;
-    p.seekTo(0).catch(() => {});
-    p.play();
-  }, []);
-}
-
 const fmt = (s: number) => {
   const t = Math.max(0, Math.ceil(s));
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
@@ -157,9 +125,9 @@ const fmt = (s: number) => {
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 /** `preview` : simple aperçu (live d'exemple de l'accueil), sans caméra en direct ni live sur l'accueil */
-export function MotDor({ open, onClose, preview, quiet }: { open: boolean; onClose: () => void; preview?: boolean; quiet?: boolean }) {
+export function MotDor({ open, onClose, preview, quiet, muted }: { open: boolean; onClose: () => void; preview?: boolean; quiet?: boolean; muted?: boolean }) {
   // quiet : aperçu dans le fil d'accueil (sans glissade, sans son, sans vibration)
-  if (quiet) return <Game onClose={onClose} preview quiet />;
+  if (quiet) return <Game onClose={onClose} preview quiet muted={muted} />;
   return (
     <LiveSlide open={open}>
       <Game onClose={onClose} preview={preview} />
@@ -167,7 +135,7 @@ export function MotDor({ open, onClose, preview, quiet }: { open: boolean; onClo
   );
 }
 
-function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: boolean; quiet?: boolean }) {
+function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview?: boolean; quiet?: boolean; muted?: boolean }) {
   useQuiet(quiet);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -176,8 +144,8 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
   const toast = useToast();
   const chat = useLiveChat(CHAT0, AUTO, 4200);
   const floaters = useFloaters();
-  const [soundOn, setSoundOn] = useState(!quiet);
-  const sfx = useSfx(soundOn);
+  const [soundOn, setSoundOn] = useState(true);
+  const sfx = useSfx(soundOn && !muted);
 
   // ── la scène ──
   const [mode, setMode] = useState<Mode>('live');
@@ -737,7 +705,10 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
     <View style={{ flex: 1, backgroundColor: '#07061A' }}>
       <Backdrop />
 
+      {/* dans le fil d'accueil (quiet), on ne voit que la grille et les joueurs, comme un live TikTok */}
+      {quiet && <View style={{ height: T + 6 }} />}
       {/* ── en-tête ── */}
+      {!quiet && (
       <View style={[styles.header, { paddingTop: T - 2 }]}>
         <Pressable onPress={onClose} hitSlop={8} style={styles.roundBtn}>
           <Ionicons name="chevron-back" size={19} color="#fff" />
@@ -775,7 +746,10 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
         </Pressable>
       </View>
 
+      )}
+
       {/* ── manche, longueur du mot, chrono ── */}
+      {!quiet && (
       <View style={styles.infoRow}>
         <View style={styles.infoPill}>
           <Text style={styles.infoText}>
@@ -794,13 +768,17 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
         </View>
       </View>
 
+      )}
+
       {/* ── légende, en tout petit ── */}
+      {!quiet && (
       <View style={styles.legendLine}>
         <Legend color={GREEN} text="Bien placée" />
         <Legend color={YELLOW} text="Mal placée" />
         <Legend color={GREY} text="Absente" />
       </View>
 
+      )}
       {/* ── la grille ── */}
       <View style={styles.boardWrap}>
         <View style={styles.board}>
@@ -913,7 +891,7 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
       </View>
 
       {/* ── clavier quand c'est ton tour, sinon progression et commentaires ── */}
-      {myTurn ? (
+      {quiet ? null : myTurn ? (
         <>
           <View style={styles.keyboard}>
             <Text style={styles.kbInfo}>
@@ -973,7 +951,7 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
       )}
 
       {/* ── barre du bas ── */}
-      {training ? (
+      {quiet ? null : training ? (
         <View style={[styles.trainBar, { paddingBottom: Math.max(insets.bottom - 6, 10) }]}>
           <Text style={styles.trainBarText}>🎯 Entraînement contre l’ordinateur · niveau {LEVEL_LABEL[level]}</Text>
         </View>

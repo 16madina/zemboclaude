@@ -12,7 +12,7 @@ import { DemoPreview } from './DemoLive';
 import { FORMAT_LABEL, type OnAirLive } from './onair';
 
 // Un live en cours dans le fil de l'accueil. Quand la carte est à l'écran, on voit déjà ce qui s'y passe
-// (la caméra de l'hôte, sans le son ; pour un live d'exemple, sa démonstration) ; on touche pour entrer.
+// (la caméra et le son de l'hôte ; pour un live d'exemple, sa démonstration) ; on touche pour entrer.
 
 const ICON: Record<OnAirLive['format'], keyof typeof Ionicons.glyphMap> = {
   table: 'people',
@@ -26,16 +26,20 @@ export const LiveFeedCard = memo(function LiveFeedCard({
   live,
   height,
   isActive,
+  near,
   onOpen,
 }: {
   live: OnAirLive;
   height: number;
   isActive: boolean;
+  /** la carte est juste avant ou après celle à l'écran : on prépare déjà le live (sans le son) */
+  near?: boolean;
   onOpen: (l: OnAirLive) => void;
 }) {
   // aperçu de la caméra seulement quand la carte est à l'écran (et pour les membres connectés)
   const preview = isActive && mediaAvailable && !!auth.currentUser && !live.demo;
-  const media = useLiveMedia(preview ? live.room : null, { publish: false, mic: false, audio: false });
+  // le son du live aussi, comme sur TikTok
+  const media = useLiveMedia(preview ? live.room : null, { publish: false, mic: false });
   const cams = media.cameras();
   const main = cams.find((c) => c.id === live.uid) ?? cams[0] ?? null;
 
@@ -59,9 +63,9 @@ export const LiveFeedCard = memo(function LiveFeedCard({
     <Pressable style={[styles.container, { height }]} onPress={() => onOpen(live)}>
       {main ? (
         <CameraFeed trackRef={main.track} style={StyleSheet.absoluteFill} />
-      ) : live.demo && isActive ? (
-        // live d'exemple à l'écran : on voit ce qui s'y passe, en direct
-        <DemoPreview live={live} />
+      ) : live.demo && (isActive || near) ? (
+        // live d'exemple : on voit ce qui s'y passe, en direct (préparé dès la carte voisine, sans l'image d'attente)
+        <DemoPreview live={live} muted={!isActive} />
       ) : live.cover ? (
         // live d'exemple pas encore à l'écran : son illustration
         <Image source={live.cover} style={StyleSheet.absoluteFill} contentFit="cover" />
@@ -79,8 +83,8 @@ export const LiveFeedCard = memo(function LiveFeedCard({
       <LinearGradient colors={['rgba(0,0,0,0.45)', 'transparent']} style={styles.topShade} pointerEvents="none" />
       {/* bas de la carte assombri : le chat du live s'efface derrière les infos (comme sur TikTok) */}
       <LinearGradient
-        colors={live.demo && isActive ? ['transparent', 'rgba(0,0,0,0.88)', '#000'] : ['transparent', 'rgba(0,0,0,0.7)']}
-        locations={live.demo && isActive ? [0, 0.45, 1] : undefined}
+        colors={live.demo ? ['transparent', 'rgba(0,0,0,0.88)', '#000'] : ['transparent', 'rgba(0,0,0,0.7)']}
+        locations={live.demo ? [0, 0.45, 1] : undefined}
         style={styles.bottomShade}
         pointerEvents="none"
       />

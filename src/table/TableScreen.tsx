@@ -62,9 +62,20 @@ function TableRoom({ config, onClose, hostRoom }: { config: TableConfig; onClose
   return user ? <RealTableRoom config={config} onClose={onClose} hostRoom={hostRoom} /> : <DemoTableRoom config={config} onClose={onClose} />;
 }
 
-export function DemoTableRoom({ config, onClose, host }: { config: TableConfig; onClose: () => void; host?: { name: string; photo?: string | number } }) {
+/** `feed` : aperçu dans le fil d'accueil (seulement la table et ses invités) */
+export function DemoTableRoom({
+  config,
+  onClose,
+  host,
+  feed,
+}: {
+  config: TableConfig;
+  onClose: () => void;
+  host?: { name: string; photo?: string | number };
+  feed?: boolean;
+}) {
   const live = useTableLive(config, host);
-  return <TableView live={live} onClose={onClose} />;
+  return <TableView live={live} onClose={onClose} feed={feed} />;
 }
 
 function RealTableRoom({ config, onClose, hostRoom }: { config: TableConfig; onClose: () => void; hostRoom?: string }) {
@@ -83,7 +94,7 @@ export function TableViewer({ live, onClose }: { live: OnAirLive | null; onClose
   );
 }
 
-function TableView({ live, onClose }: { live: TableLive; onClose: () => void }) {
+function TableView({ live, onClose, feed }: { live: TableLive; onClose: () => void; feed?: boolean }) {
   const config = live.config;
   const insets = useSafeAreaInsets();
   const { width: W, height: H } = useWindowDimensions();
@@ -149,7 +160,8 @@ function TableView({ live, onClose }: { live: TableLive; onClose: () => void }) 
         );
       })}
 
-      {/* en-tête */}
+      {/* en-tête (masqué dans l'aperçu du fil d'accueil) */}
+      {!feed && (
       <LinearGradient colors={['rgba(5,3,2,0.9)', 'rgba(5,3,2,0)']} style={[styles.header, { paddingTop: insets.top + 4 }]} pointerEvents="box-none">
         <Pressable onPress={onClose} style={styles.quit} hitSlop={8}>
           <Ionicons name="chevron-down" size={18} color={colors.goldLight} />
@@ -181,6 +193,7 @@ function TableView({ live, onClose }: { live: TableLive; onClose: () => void }) 
           )}
         </Pressable>
       </LinearGradient>
+      )}
 
       {!!live.status && (
         <View style={[styles.statusPill, { top: g.cy + g.h * 0.24 }]} pointerEvents="none">
@@ -191,7 +204,7 @@ function TableView({ live, onClose }: { live: TableLive; onClose: () => void }) 
       {burst && <GiftBurst key={burst.key} emoji={burst.emoji} x={g.cx} y={g.cy} onDone={() => setBurst(null)} />}
 
       {/* commentaires + saisie, par-dessus le bas de la table */}
-      <LiveFooter live={live} onGift={() => setSheet('gift')} />
+      {!feed && <LiveFooter live={live} onGift={() => setSheet('gift')} />}
 
       <SpectatorsSheet live={live} visible={sheet === 'spectators'} onClose={() => setSheet(null)} />
       <QueueSheet live={live} visible={sheet === 'queue'} onClose={() => setSheet(null)} />

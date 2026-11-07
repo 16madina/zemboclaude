@@ -156,7 +156,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
           keyExtractor={(p) => `${tab}-${p.id}`}
           renderItem={({ item, index }) =>
             item.onAir ? (
-              <LiveFeedCard live={item.onAir} height={height} isActive={playing && index === active} onOpen={openRealLive} />
+              <LiveFeedCard live={item.onAir} height={height} isActive={playing && index === active} near={playing && Math.abs(index - active) === 1} onOpen={openRealLive} />
             ) : (
             <VideoPost
               post={item}

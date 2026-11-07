@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { hx, useQuiet } from '../live/quiet';
+import { useSfx } from './sfx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurMask, Canvas, Circle, LinearGradient as SkLinear, Oval, Path, RadialGradient, Rect, Skia, vec } from '@shopify/react-native-skia';
 import { goldGradient } from '../theme';
@@ -216,9 +217,9 @@ const GIFTS: Gift[] = [
 ];
 
 /** `preview` : simple aperçu (live d'exemple de l'accueil), sans caméra en direct ni live sur l'accueil */
-export function LettresDor({ open, onClose, preview, quiet }: { open: boolean; onClose: () => void; preview?: boolean; quiet?: boolean }) {
+export function LettresDor({ open, onClose, preview, quiet, muted }: { open: boolean; onClose: () => void; preview?: boolean; quiet?: boolean; muted?: boolean }) {
   // quiet : aperçu dans le fil d'accueil (sans glissade, sans son, sans vibration)
-  if (quiet) return <Game onClose={onClose} preview quiet />;
+  if (quiet) return <Game onClose={onClose} preview quiet muted={muted} />;
   return (
     <LiveSlide open={open}>
       <Game onClose={onClose} preview={preview} />
@@ -226,8 +227,9 @@ export function LettresDor({ open, onClose, preview, quiet }: { open: boolean; o
   );
 }
 
-function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: boolean; quiet?: boolean }) {
+function Game({ onClose, preview, quiet, muted }: { onClose: () => void; preview?: boolean; quiet?: boolean; muted?: boolean }) {
   useQuiet(quiet);
+  const sfx = useSfx(!muted);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const T = insets.top;
@@ -596,6 +598,26 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
     }, 2600);
     return () => clearTimeout(t);
   }, [phase, kind, stage]);
+
+  // ── effets sonores (ceux de Mot d'Or) : lettre tirée, top départ, tic-tac, réponses, fin de tour ──
+  const nLetters = letters.length;
+  useEffect(() => {
+    if (phase === 'choose' && nLetters > 0) sfx('key');
+  }, [nLetters, phase, sfx]);
+  useEffect(() => {
+    if (phase === 'play') sfx('turn');
+    else if (phase === 'elim') sfx('fail');
+    else if (phase === 'champion' || phase === 'end') sfx('win');
+  }, [phase, sfx]);
+  const secLeft = Math.ceil(duration - elapsed);
+  useEffect(() => {
+    if (phase === 'play' && secLeft <= 10 && secLeft > 0) sfx('tick');
+  }, [phase, secLeft, sfx]);
+  useEffect(() => {
+    if (phase !== 'reveal' || revealed < 1 || revealed > results.length) return;
+    const r = results[revealed - 1];
+    sfx(!r?.answer ? 'no' : r.valid ? 'ok' : 'bad');
+  }, [phase, revealed, results, sfx]);
 
   // ── 2a. Lettres : chaque joueur choisit Voyelle ou Consonne à son tour ──
   const choose = (want: 'V' | 'C') => {
@@ -967,7 +989,10 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
     <View style={{ flex: 1, backgroundColor: '#07061A' }}>
       <Backdrop />
 
+      {/* dans le fil d'accueil (quiet), on ne voit que le plateau et les joueurs, comme un live TikTok */}
+      {quiet && <View style={{ height: T + 6 }} />}
       {/* ── en-tête compact ── */}
+      {!quiet && (
       <View style={[styles.header, { paddingTop: T - 2 }]}>
         <Pressable onPress={onClose} hitSlop={8} style={styles.roundBtn}>
           <Ionicons name="chevron-back" size={19} color="#fff" />
@@ -1005,10 +1030,12 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
         </Pressable>
       </View>
 
+      )}
+
       {/* ── le plateau : lettres ou chiffres (manche à gauche, tour à droite) ── */}
       <View style={styles.boardWrap}>
         <View style={styles.board}>
-          <View style={styles.boardLabelWrap} pointerEvents="none">
+          <View style={[styles.boardLabelWrap, quiet && { opacity: 0 }]} pointerEvents="none">
             <View style={styles.sideLeft}>
               <View style={styles.sidePill}>
                 <Text style={styles.sideText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
@@ -1203,7 +1230,7 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
 
               {phase === 'draw' && <Text style={styles.hint}>Tirage des plaques…</Text>}
 
-              {phase === 'play' && !meOnStage && !group && <Text style={styles.hint}>Tu regardes. Touche 🙋 en bas pour demander à monter sur scène.</Text>}
+              {phase === 'play' && !meOnStage && !group && !quiet && <Text style={styles.hint}>Tu regardes. Touche 🙋 en bas pour demander à monter sur scène.</Text>}
               {phase === 'play' && !meOnStage && group && <LeagueInfo status={myStatus} next={nextTable} note={nextNote} onPress={() => setQueueOpen(true)} />}
 
               {phase === 'play' && meOnStage && data?.kind === 'L' && (
@@ -1412,7 +1439,7 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
 
       {/* ── chat ── */}
       <View
-        style={styles.chatWrap}
+        style={[styles.chatWrap, quiet && { opacity: 0 }]}
         onLayout={(e) => {
           chatY.current = e.nativeEvent.layout.y;
           setChatH(e.nativeEvent.layout.height);
@@ -1445,7 +1472,7 @@ function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: bool
       </View>
 
       {/* ── barre du bas ── */}
-      {training ? (
+      {quiet ? null : training ? (
         <View style={[styles.trainBar, { paddingBottom: Math.max(insets.bottom - 6, 10) }]}>
           <Text style={styles.trainBarText}>🎯 Entraînement contre l’ordinateur · niveau {LEVEL_LABEL[level]}</Text>
         </View>

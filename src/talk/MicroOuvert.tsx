@@ -77,7 +77,8 @@ export function MicroOuvert({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
-export function MicroLive({ onClose }: { onClose: () => void }) {
+/** quiet : aperçu dans le fil d'accueil (seulement la scène) */
+export function MicroLive({ onClose, quiet }: { onClose: () => void; quiet?: boolean }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const T = insets.top;
@@ -227,7 +228,9 @@ export function MicroLive({ onClose }: { onClose: () => void }) {
         </View>
       </View>
 
-      {/* en-tête */}
+      {/* en-tête (masqué dans l'aperçu du fil d'accueil) */}
+      {!quiet && (
+      <>
       <View style={[styles.head, { top: T + 4 }]}>
         <LinearGradient colors={goldGradient} style={styles.z}>
           <Text style={styles.zText}>Z</Text>
@@ -263,6 +266,9 @@ export function MicroLive({ onClose }: { onClose: () => void }) {
           </Pressable>
         </View>
       </View>
+
+      </>
+      )}
 
       {/* 4 places invités */}
       <View style={[styles.guests, { top: T + 88 + stageH - 64 }]}>
@@ -315,7 +321,9 @@ export function MicroLive({ onClose }: { onClose: () => void }) {
         })}
       </View>
 
-      {/* colonne droite */}
+      {/* actions, chat et barre du bas (masqués dans l'aperçu du fil d'accueil) */}
+      {!quiet && (
+      <>
       <View style={[styles.actions, { top: T + 96 }]}>
         <SideAction icon="arrow-redo" label="Partager" onPress={() => setSheet('invite')} />
         {/* demander à monter / à parler directement, sans passer par le menu */}
@@ -377,6 +385,8 @@ export function MicroLive({ onClose }: { onClose: () => void }) {
           </View>
         )}
       </KeyboardAvoidingView>
+      </>
+      )}
 
       {fly.layer}
       <Toast text={toast.text} top={T + 96} />

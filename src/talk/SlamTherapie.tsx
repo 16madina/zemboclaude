@@ -55,8 +55,8 @@ export const COUNTDOWN = 10;
 
 type Heart = { id: number; x: number; y: number; v: Animated.Value };
 
-/** quiet : aperçu dans le fil d'accueil (sans mélodie) */
-export function SlamLive({ onClose, quiet }: { onClose: () => void; quiet?: boolean }) {
+/** quiet : aperçu dans le fil d'accueil (seulement la scène) ; muted : sans la mélodie */
+export function SlamLive({ onClose, quiet, muted }: { onClose: () => void; quiet?: boolean; muted?: boolean }) {
   const insets = useSafeAreaInsets();
   const T = insets.top;
 
@@ -254,7 +254,7 @@ export function SlamLive({ onClose, quiet }: { onClose: () => void; quiet?: bool
 
   // mélodie du passage en cours (jouée en boucle pendant que la personne est au mic)
   const stageFile = melodyFile(perf.sound, perf.duration);
-  const [musicOn, setMusicOn] = useState(!quiet);
+  const [musicOn, setMusicOn] = useState(true);
   const stage = useAudioPlayer(null);
   const stageFileRef = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -262,7 +262,7 @@ export function SlamLive({ onClose, quiet }: { onClose: () => void; quiet?: bool
   }, []);
   useEffect(() => {
     // pas de musique pendant le « merci », le décompte ou quand on écoute un aperçu
-    const shouldPlay = !!stageFile && musicOn && running && !thanks && !nextUp && flow !== 'request';
+    const shouldPlay = !!stageFile && musicOn && !muted && running && !thanks && !nextUp && flow !== 'request';
     try {
       if (stageFileRef.current !== stageFile) {
         stageFileRef.current = stageFile;
@@ -275,7 +275,7 @@ export function SlamLive({ onClose, quiet }: { onClose: () => void; quiet?: bool
       if (shouldPlay) stage.play();
       else stage.pause();
     } catch {}
-  }, [stage, stageFile, musicOn, running, thanks, nextUp, flow]);
+  }, [stage, stageFile, musicOn, muted, running, thanks, nextUp, flow]);
 
   const total = perf.duration * 60;
   const ratio = left / total;
@@ -311,7 +311,9 @@ export function SlamLive({ onClose, quiet }: { onClose: () => void; quiet?: bool
         </Animated.Text>
       ))}
 
-      {/* en-tête */}
+      {/* en-tête et file d'attente (masqués dans l'aperçu du fil d'accueil) */}
+      {!quiet && (
+      <>
       <View style={[styles.header, { top: T + 4 }]} pointerEvents="box-none">
         <LinearGradient colors={goldGradient} style={styles.zIcon}>
           <Text style={styles.zText}>Z</Text>
@@ -355,6 +357,9 @@ export function SlamLive({ onClose, quiet }: { onClose: () => void; quiet?: bool
           )}
         </Pressable>
       </View>
+
+      </>
+      )}
 
       {/* sur scène + chrono */}
       <View style={[styles.stageRow, { top: T + 92 }]} pointerEvents="box-none">
@@ -411,7 +416,9 @@ export function SlamLive({ onClose, quiet }: { onClose: () => void; quiet?: bool
         </View>
       )}
 
-      {/* colonne d'actions */}
+      {/* actions, chat et saisie (masqués dans l'aperçu du fil d'accueil) */}
+      {!quiet && (
+      <>
       <View style={[styles.actions, { bottom: insets.bottom + 76 }]}>
         <Action icon="arrow-redo" label="Partager" onPress={() => setSheet('share')} />
         {/* demander le mic directement, sans passer par la file */}
@@ -492,6 +499,8 @@ export function SlamLive({ onClose, quiet }: { onClose: () => void; quiet?: bool
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+      </>
+      )}
 
       {/* cadeau qui s'envole */}
       {giftFly && <GiftFly key={giftFly + seq.current} emoji={giftFly} />}
