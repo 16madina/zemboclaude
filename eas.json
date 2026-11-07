@@ -17,7 +17,10 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "zemboclaude"
+      "channel": "zemboclaude",
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
       "channel": "production"
