@@ -246,13 +246,18 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
     const name = VIEWERS[k % VIEWERS.length];
     return { id: `v${k}`, name, photo: faceOf(name, 300), level: LEVELS[k % LEVELS.length], score: 0, last: 0 } as Player;
   };
-  const [stage, setStage] = useState<Player[]>(() => [ME, worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2])]);
+  // aperçu (live d'exemple de l'accueil) : la partie est déjà lancée, 4 joueurs sur scène, tu regardes
+  const [stage, setStage] = useState<Player[]>(() =>
+    preview
+      ? [worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2]), fresh(HOST_SEAT)]
+      : [ME, worldPlayer('moussa', LEVELS[0]), worldPlayer('awa', LEVELS[1]), worldPlayer('kenji', LEVELS[2])],
+  );
   const [queue, setQueue] = useState<Player[]>(() => Array.from({ length: 4 }, newViewer));
   const [crowns, setCrowns] = useState<Crowns>({});
   const [manche, setManche] = useState(1);
   const [stageIdx, setStageIdx] = useState(0);
   const [epreuve, setEpreuve] = useState(0);
-  const [phase, setPhase] = useState<Phase>('mode');
+  const [phase, setPhase] = useState<Phase>(preview ? 'intro' : 'mode');
   const [overlay, setOverlay] = useState<Overlay | null>(null);
 
   // ── l'épreuve en cours ──
@@ -298,7 +303,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
   const training = format === 'training';
   const [level, setLevel] = useState<Level>('difficile');
   const [trainBots, setTrainBots] = useState<Player[]>(() => pickBots('difficile'));
-  const [hostPlays, setHostPlays] = useState(true); // l'hôte prend une des 4 places, ou présente sans jouer
+  const [hostPlays, setHostPlays] = useState(!preview); // l'hôte prend une des 4 places, ou présente sans jouer
   const [focus, setFocus] = useState<Player | null>(null);
   const rondes = RONDES[lgSize] ?? 4;
   const general = sortStandings(standings);

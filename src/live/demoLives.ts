@@ -45,11 +45,11 @@ export const DEMO_LIVES: OnAirLive[] = [
       room: 'demo-lettres',
       format: 'lettres',
       title: 'Championnat du soir · 4 joueurs sur scène',
-      pseudo: 'awa.dakar',
-      name: 'Awa',
+      pseudo: 'elena.jeux',
+      name: 'Elena',
       viewers: 932,
       cover: require('../../assets/create/lettres.jpg'),
-      face: require('../../assets/world/awa-dakar.jpg'),
+      face: require('../../assets/world/elena.jpg'),
     },
     9,
   ),
@@ -80,3 +80,4 @@ export const DEMO_LIVES: OnAirLive[] = [
     25,
   ),
 ];
+

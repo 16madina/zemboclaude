@@ -183,7 +183,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
   const [trio, setTrio] = useState<P[]>(() => pickTrio('difficile'));
   const [focus, setFocus] = useState<P | null>(null); // fiche d'un joueur (cadeau, applaudir, profil)
   const training = mode === 'training';
-  const [hostPlays, setHostPlays] = useState(true);
+  const [hostPlays, setHostPlays] = useState(!preview);
   const [stage, setStage] = useState<P[]>([]);
   const [out, setOut] = useState<string[]>([]); // éliminés de la partie en cours (vignette grisée)
   const [phase, setPhase] = useState<Phase>('lobby');
@@ -296,6 +296,12 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
       players.map((p) => p.id),
     );
   };
+
+  // aperçu (live d'exemple de l'accueil) : la partie démarre tout de suite, 4 joueurs sur scène, tu regardes
+  useEffect(() => {
+    if (preview) startGame(lobbyPlayers(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // présentation du joueur, puis son tour commence
   useEffect(() => {
