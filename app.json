@@ -52,6 +52,14 @@
           "microphonePermission": "Zembo utilise ton micro pour enregistrer le son de tes vidéos et parler en direct.",
           "recordAudioAndroid": true
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "-keep class livekit.org.webrtc.** { *; }\n-keep class livekit.org.jni_zero.** { *; }\n-dontwarn livekit.org.jni_zero.**\n-dontwarn livekit.org.webrtc.**"
+          }
+        }
       ]
     ],
     "backgroundColor": "#050403",
