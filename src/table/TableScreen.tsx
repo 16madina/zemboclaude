@@ -56,7 +56,7 @@ export function TableScreen({ config, onClose }: { config: TableConfig | null; o
 const BUBBLE: Record<number, number> = { 2: 84, 4: 78, 6: 70, 8: 62 };
 const INPUT_H = 50;
 
-function TableRoom({ config, onClose, hostRoom }: { config: TableConfig; onClose: () => void; hostRoom?: string }) {
+export function TableRoom({ config, onClose, hostRoom }: { config: TableConfig; onClose: () => void; hostRoom?: string }) {
   const { user } = useSession();
   // live réel dès qu'on est connecté ; sinon (mode test sans compte) la table de démonstration
   return user ? <RealTableRoom config={config} onClose={onClose} hostRoom={hostRoom} /> : <DemoTableRoom config={config} onClose={onClose} />;

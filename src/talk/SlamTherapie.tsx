@@ -56,7 +56,7 @@ export const COUNTDOWN = 10;
 type Heart = { id: number; x: number; y: number; v: Animated.Value };
 
 /** quiet : aperçu dans le fil d'accueil (seulement la scène) ; muted : sans la mélodie */
-export function SlamLive({ onClose, quiet, muted }: { onClose: () => void; quiet?: boolean; muted?: boolean }) {
+export function SlamLive({ onClose, quiet, muted, host }: { onClose: () => void; quiet?: boolean; muted?: boolean; host?: { name: string; photo?: string | number } }) {
   const insets = useSafeAreaInsets();
   const T = insets.top;
 
@@ -400,12 +400,12 @@ export function SlamLive({ onClose, quiet, muted }: { onClose: () => void; quiet
 
       {/* vignette de l'hôte (caméra) */}
       <View style={[styles.pip, { top: T + 196 }]} pointerEvents="none">
-        <Image source={avatarOf('Deena', 160)} style={styles.pipImg} />
+        <Image source={host?.photo ?? avatarOf(host?.name ?? 'Deena', 160)} style={styles.pipImg} />
         <View style={styles.cam}>
           <View style={styles.camDot} />
           <Text style={styles.camText}>CAM</Text>
         </View>
-        <Text style={styles.pipName}>👑 Deena</Text>
+        <Text style={styles.pipName} numberOfLines={1}>👑 {host?.name ?? 'Deena'}</Text>
         <Text style={styles.pipRole}>Hôte</Text>
       </View>
 

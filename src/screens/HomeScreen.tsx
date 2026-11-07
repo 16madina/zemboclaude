@@ -11,16 +11,11 @@ import { useFeedPosts } from '../post/posts';
 import { useFollowingFeed } from '../post/social';
 import { UserProfile, type ProfileTarget } from '../post/UserProfile';
 import { useSession } from '../lib/session';
-import { auth } from '../lib/firebase';
 import { PostActionsHost } from '../post/PostActionsHost';
 import { useOnAirLives, type OnAirLive } from '../live/onair';
 import { LiveFeedCard } from '../live/LiveFeedCard';
-import { LiveViewer } from '../live/LiveViewer';
-import { TableViewer } from '../table/TableScreen';
-import { MicroViewer } from '../talk/MicroOuvertReal';
-import { SlamViewer } from '../talk/SlamReal';
-import { DemoLive } from '../live/DemoLive';
 import { DEMO_LIVES } from '../live/demoLives';
+import { LiveSwiper } from '../live/LiveSwiper';
 
 /** Un live en cours présenté comme une carte du fil */
 const liveItem = (l: OnAirLive): Post => ({
@@ -86,24 +81,16 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [shownRooms, others],
   );
-  const [watch, setWatch] = useState<OnAirLive | null>(null);
-  const [tableOf, setTableOf] = useState<OnAirLive | null>(null);
-  const [microOf, setMicroOf] = useState<OnAirLive | null>(null);
-  const [slamOf, setSlamOf] = useState<OnAirLive | null>(null);
-  const [demoOf, setDemoOf] = useState<OnAirLive | null>(null);
-  // une Zembo Table s'ouvre autour de la table ; les autres lives dans l'écran spectateur
+  // l'univers des lives : on entre dans un live, puis on glisse vers le haut pour passer au suivant
+  const swipeList = useMemo(() => lives.map((p) => p.onAir!).filter(Boolean), [lives]);
+  const [swipeAt, setSwipeAt] = useState<number | null>(null);
   const openRealLive = useCallback(
-    (l: OnAirLive) =>
-      l.demo
-        ? setDemoOf(l)
-        : requireAuth('Connecte-toi pour regarder le live.', () => {
-        if (!auth.currentUser) return setWatch(l);
-        if (l.format === 'table') setTableOf(l);
-        else if (l.format === 'openmic') setMicroOf(l);
-        else if (l.format === 'slam') setSlamOf(l);
-        else setWatch(l);
-      }),
-    [requireAuth],
+    (l: OnAirLive) => {
+      const i = Math.max(0, swipeList.findIndex((x) => x.room === l.room));
+      if (l.demo) return setSwipeAt(i);
+      requireAuth('Connecte-toi pour regarder le live.', () => setSwipeAt(i));
+    },
+    [requireAuth, swipeList],
   );
   const followed = useFollowingFeed(user?.uid);
   const [profileOf, setProfileOf] = useState<ProfileTarget | null>(null);
@@ -128,7 +115,7 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
     setActive(0);
     requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
   }, [jumpTop]);
-  const playing = focused && !live && !watch && !tableOf && !microOf && !slamOf && !demoOf && !profileOf && !tagOf;
+  const playing = focused && !live && swipeAt === null && !profileOf && !tagOf;
 
   const changeTab = (t: FeedTab) => {
     setTab(t);
@@ -181,16 +168,12 @@ export function HomeScreen({ focused, jumpTop = 0 }: { focused: boolean; jumpTop
         />
       )}
 
-      <TopTabs value={tab} onChange={changeTab} onLive={() => (others[0] ? openRealLive(others[0]) : setLive(firstLive))} />
+      <TopTabs value={tab} onChange={changeTab} onLive={() => (swipeList[0] ? openRealLive(swipeList[0]) : setLive(firstLive))} />
 
       <CommentsSheet post={commentsFor} onClose={() => setCommentsFor(null)} />
       <ShareSheet post={shareFor} onClose={() => setShareFor(null)} />
       <LiveScreen post={live} onClose={() => setLive(null)} />
-      <LiveViewer live={watch} onClose={() => setWatch(null)} />
-      <TableViewer live={tableOf} onClose={() => setTableOf(null)} />
-      <MicroViewer live={microOf} onClose={() => setMicroOf(null)} />
-      <SlamViewer live={slamOf} onClose={() => setSlamOf(null)} />
-      <DemoLive live={demoOf} onClose={() => setDemoOf(null)} />
+      <LiveSwiper lives={swipeList} start={swipeAt} onClose={() => setSwipeAt(null)} />
       <UserProfile target={profileOf} onClose={() => setProfileOf(null)} />
     </View>
     </PostActionsHost>

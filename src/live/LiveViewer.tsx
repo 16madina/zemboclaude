@@ -52,7 +52,8 @@ export function Initial({ name, size }: { name: string; size: number }) {
   );
 }
 
-function Viewer({ start, onClose }: { start: OnAirLive; onClose: () => void }) {
+/** L'écran d'un live, sans fenêtre autour (utilisé aussi dans le défilement entre lives) */
+export function Viewer({ start, onClose }: { start: OnAirLive; onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const { user, profile } = useSession();
   const now = useOnAirLive(start.room);

@@ -78,7 +78,7 @@ export function MicroOuvert({ open, onClose }: { open: boolean; onClose: () => v
 }
 
 /** quiet : aperçu dans le fil d'accueil (seulement la scène) */
-export function MicroLive({ onClose, quiet }: { onClose: () => void; quiet?: boolean }) {
+export function MicroLive({ onClose, quiet, host }: { onClose: () => void; quiet?: boolean; host?: { name: string; photo?: string | number } }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const T = insets.top;
@@ -205,9 +205,9 @@ export function MicroLive({ onClose, quiet }: { onClose: () => void; quiet?: boo
         />
         {/* pastille hôte */}
         <View style={styles.hostChip} pointerEvents="box-none">
-          <Image source={HOST_FACE} style={styles.hostAv} />
+          <Image source={host?.photo ?? HOST_FACE} style={styles.hostAv} />
           <View>
-            <Text style={styles.hostName}>Deena 👑</Text>
+            <Text style={styles.hostName}>{host?.name ?? 'Deena'} 👑</Text>
             <Text style={styles.hostRole}>Hôte</Text>
           </View>
           {role !== 'host' && (
