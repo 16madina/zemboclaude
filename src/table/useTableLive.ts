@@ -39,8 +39,8 @@ export type TableLive = {
 };
 
 // Un live autour d'une table : qui parle, micros, demandes pour monter, chat
-export function useTableLive(config: TableConfig) {
-  const [seats, setSeats] = useState<Seat[]>(() => initialSeats(config.capacity));
+export function useTableLive(config: TableConfig, host?: { name: string; photo?: string | number }) {
+  const [seats, setSeats] = useState<Seat[]>(() => initialSeats(config.capacity, host));
   const [queue, setQueue] = useState(QUEUE0);
   const [muted, setMuted] = useState<Record<number, boolean>>({});
   const [speaking, setSpeaking] = useState<number | null>(0);

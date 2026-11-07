@@ -17,6 +17,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { hx, useQuiet } from '../live/quiet';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { goldGradient } from '../theme';
@@ -156,7 +157,9 @@ const fmt = (s: number) => {
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 /** `preview` : simple aperçu (live d'exemple de l'accueil), sans caméra en direct ni live sur l'accueil */
-export function MotDor({ open, onClose, preview }: { open: boolean; onClose: () => void; preview?: boolean }) {
+export function MotDor({ open, onClose, preview, quiet }: { open: boolean; onClose: () => void; preview?: boolean; quiet?: boolean }) {
+  // quiet : aperçu dans le fil d'accueil (sans glissade, sans son, sans vibration)
+  if (quiet) return <Game onClose={onClose} preview quiet />;
   return (
     <LiveSlide open={open}>
       <Game onClose={onClose} preview={preview} />
@@ -164,7 +167,8 @@ export function MotDor({ open, onClose, preview }: { open: boolean; onClose: () 
   );
 }
 
-function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) {
+function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: boolean; quiet?: boolean }) {
+  useQuiet(quiet);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const T = insets.top;
@@ -172,7 +176,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
   const toast = useToast();
   const chat = useLiveChat(CHAT0, AUTO, 4200);
   const floaters = useFloaters();
-  const [soundOn, setSoundOn] = useState(true);
+  const [soundOn, setSoundOn] = useState(!quiet);
   const sfx = useSfx(soundOn);
 
   // ── la scène ──
@@ -320,7 +324,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
       tokenRef.current += 1;
       go('turn');
       sfx('turn');
-      if (p?.me) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      if (p?.me) void hx.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       else if (p) scheduleBot(p);
     }, 1800);
     return () => clearTimeout(t);
@@ -355,7 +359,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
       if (err) {
         sfx('bad');
         toast.show(err);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        void hx.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
         Animated.sequence([10, -10, 7, -7, 0].map((x) => Animated.timing(shake, { toValue: x, duration: 55, useNativeDriver: true }))).start(() => {
           // la ligne s'efface toute seule : pas besoin d'appuyer sur ⌫
           if (phaseRef.current === 'turn') setTyping('');
@@ -436,7 +440,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
     setTotals(totalsRef.current);
     setTurnEnd({ found, word: secretsRef.current[id], pts: points });
     sfx(found ? 'win' : 'fail');
-    if (found) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    if (found) void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     go('turnEnd');
   };
 
@@ -566,7 +570,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
       return next;
     });
     sfx('win');
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     go('champion');
   };
 
@@ -1040,7 +1044,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
           setHostPlays={setHostPlays}
           players={training ? [ME, ...trio] : lobbyPlayers(hostPlays)}
           onStart={() => {
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+            void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
             setCamReady(!training && hostPlays);
             startGame(training ? [ME, ...trio] : lobbyPlayers(hostPlays));
           }}

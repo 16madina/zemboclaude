@@ -55,7 +55,8 @@ export const COUNTDOWN = 10;
 
 type Heart = { id: number; x: number; y: number; v: Animated.Value };
 
-export function SlamLive({ onClose }: { onClose: () => void }) {
+/** quiet : aperçu dans le fil d'accueil (sans mélodie) */
+export function SlamLive({ onClose, quiet }: { onClose: () => void; quiet?: boolean }) {
   const insets = useSafeAreaInsets();
   const T = insets.top;
 
@@ -253,7 +254,7 @@ export function SlamLive({ onClose }: { onClose: () => void }) {
 
   // mélodie du passage en cours (jouée en boucle pendant que la personne est au mic)
   const stageFile = melodyFile(perf.sound, perf.duration);
-  const [musicOn, setMusicOn] = useState(true);
+  const [musicOn, setMusicOn] = useState(!quiet);
   const stage = useAudioPlayer(null);
   const stageFileRef = useRef<number | undefined>(undefined);
   useEffect(() => {

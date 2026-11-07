@@ -8,6 +8,8 @@ export type Seat = {
   /** vraie personne (live réel) : identifiant Zembo */
   uid?: string;
   real?: boolean;
+  /** photo (live d'exemple) */
+  photo?: string | number;
   shirt: string; // couleur du haut du joueur en 3D
 };
 
@@ -27,14 +29,16 @@ const SHIRTS = ['#8C6A2E', '#5B2335', '#2F4A3A', '#B9B2A4', '#7A3B1E', '#2C3A55'
 // Invités déjà assis au lancement (démo). Toi = hôte, en tête de table.
 const GUESTS = ['Sarah', 'Leïla', 'Yann', 'Aïcha', 'Marc', 'Kader', 'Nadia'];
 
-export function initialSeats(capacity: number): Seat[] {
+/** `host` : un autre hôte que toi en tête de table (live d'exemple vu depuis l'accueil) */
+export function initialSeats(capacity: number, host?: { name: string; photo?: string | number }): Seat[] {
   return Array.from({ length: capacity }, (_, i) => {
     // on laisse une place libre sur les grandes tables pour montrer les demandes
     const free = capacity >= 6 && i === capacity - 2;
     return {
       n: i + 1,
-      name: i === 0 ? 'Deena' : free ? null : GUESTS[i - 1],
-      you: i === 0,
+      name: i === 0 ? (host?.name ?? 'Deena') : free ? null : GUESTS[i - 1],
+      photo: i === 0 ? host?.photo : undefined,
+      you: i === 0 && !host,
       host: i === 0,
       shirt: SHIRTS[i % SHIRTS.length],
     };

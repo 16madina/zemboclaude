@@ -8,10 +8,11 @@ import { formatCount } from '../utils/format';
 import { auth } from '../lib/firebase';
 import { CameraFeed, mediaAvailable, useLiveMedia } from './media';
 import { Initial } from './LiveViewer';
+import { DemoPreview } from './DemoLive';
 import { FORMAT_LABEL, type OnAirLive } from './onair';
 
-// Un live en cours dans le fil de l'accueil. Quand la carte est à l'écran, on voit déjà
-// la caméra de l'hôte (sans le son) ; on touche pour entrer dans le live.
+// Un live en cours dans le fil de l'accueil. Quand la carte est à l'écran, on voit déjà ce qui s'y passe
+// (la caméra de l'hôte, sans le son ; pour un live d'exemple, sa démonstration) ; on touche pour entrer.
 
 const ICON: Record<OnAirLive['format'], keyof typeof Ionicons.glyphMap> = {
   table: 'people',
@@ -58,8 +59,11 @@ export const LiveFeedCard = memo(function LiveFeedCard({
     <Pressable style={[styles.container, { height }]} onPress={() => onOpen(live)}>
       {main ? (
         <CameraFeed trackRef={main.track} style={StyleSheet.absoluteFill} />
+      ) : live.demo && isActive ? (
+        // live d'exemple à l'écran : on voit ce qui s'y passe, en direct
+        <DemoPreview live={live} />
       ) : live.cover ? (
-        // live d'exemple : son illustration en plein écran
+        // live d'exemple pas encore à l'écran : son illustration
         <Image source={live.cover} style={StyleSheet.absoluteFill} contentFit="cover" />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.center]}>
@@ -73,7 +77,13 @@ export const LiveFeedCard = memo(function LiveFeedCard({
         </View>
       )}
       <LinearGradient colors={['rgba(0,0,0,0.45)', 'transparent']} style={styles.topShade} pointerEvents="none" />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.bottomShade} pointerEvents="none" />
+      {/* bas de la carte assombri : le chat du live s'efface derrière les infos (comme sur TikTok) */}
+      <LinearGradient
+        colors={live.demo && isActive ? ['transparent', 'rgba(0,0,0,0.88)', '#000'] : ['transparent', 'rgba(0,0,0,0.7)']}
+        locations={live.demo && isActive ? [0, 0.45, 1] : undefined}
+        style={styles.bottomShade}
+        pointerEvents="none"
+      />
 
       <View style={styles.info} pointerEvents="none">
         <View style={styles.row}>

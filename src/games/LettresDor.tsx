@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { hx, useQuiet } from '../live/quiet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurMask, Canvas, Circle, LinearGradient as SkLinear, Oval, Path, RadialGradient, Rect, Skia, vec } from '@shopify/react-native-skia';
 import { goldGradient } from '../theme';
@@ -215,7 +216,9 @@ const GIFTS: Gift[] = [
 ];
 
 /** `preview` : simple aperçu (live d'exemple de l'accueil), sans caméra en direct ni live sur l'accueil */
-export function LettresDor({ open, onClose, preview }: { open: boolean; onClose: () => void; preview?: boolean }) {
+export function LettresDor({ open, onClose, preview, quiet }: { open: boolean; onClose: () => void; preview?: boolean; quiet?: boolean }) {
+  // quiet : aperçu dans le fil d'accueil (sans glissade, sans son, sans vibration)
+  if (quiet) return <Game onClose={onClose} preview quiet />;
   return (
     <LiveSlide open={open}>
       <Game onClose={onClose} preview={preview} />
@@ -223,7 +226,8 @@ export function LettresDor({ open, onClose, preview }: { open: boolean; onClose:
   );
 }
 
-function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) {
+function Game({ onClose, preview, quiet }: { onClose: () => void; preview?: boolean; quiet?: boolean }) {
+  useQuiet(quiet);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const T = insets.top;
@@ -524,7 +528,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
     if (lastEpreuve && nextTable?.some((p) => p.me)) left = CALL_TIME;
     else if (phase === 'tableEnd' && tableEnd?.next.some((p) => p.me)) left = CALL_TIME_LATE;
     if (!left) return;
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     setCallLeft(left);
     setCallUp(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -547,7 +551,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
   const confirmReady = () => {
     setReady(true);
     setCallUp(false);
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     toast.show('Parfait ! Tu montes juste après 🎤');
   };
   const skipTable = () => {
@@ -604,7 +608,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
     if (type === 'V' && c + remaining - 1 < MIN_CONSONANTS) type = 'C';
     setLetters([...letters, drawOne(type, letters)]);
     setLastPick({ who: nameOf(chooser), whoId: chooser.id, type, forced: type !== want });
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    void hx.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
   useEffect(() => {
@@ -632,7 +636,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
       return () => clearTimeout(t);
     }
     // c'est ton tour : vibration pour te prévenir
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     setChooseLeft(CHOOSE_TIME);
     const t = setInterval(() => setChooseLeft((x) => x - 1), 1000);
     return () => clearInterval(t);
@@ -656,7 +660,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
     const t = setTimeout(
       () => {
         setShown((n) => n + 1);
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        void hx.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       },
       shown === data.plaques.length ? 700 : 260,
     );
@@ -701,7 +705,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
       if (myValue === null) return toast.show('Choisis une plaque ou fais un calcul');
       setMine({ at: elapsed, value: myValue, steps: steps.map((s) => s.text) });
     }
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   };
 
   // ── 4. Fin du chrono : on calcule les points et on révèle ──
@@ -754,7 +758,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
     }
     const t = setTimeout(
       () => {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+        void hx.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
         if (revealed === results.length) {
           setStage((ps) =>
             ps.map((p) => {
@@ -904,7 +908,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
     setSteps([...steps, { a: sel, b: i, text: `${a} ${op} ${b} = ${r}` }]);
     setSel(nextItems.length - 1);
     setOp(null);
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    void hx.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   };
   const undo = () => {
     if (!canPlay) return;
@@ -1529,7 +1533,7 @@ function Game({ onClose, preview }: { onClose: () => void; preview?: boolean }) 
                   ]
           }
           onStart={() => {
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+            void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
             setStageIdx(0);
             setEpreuve(0);
             if (format === 'training') {
@@ -1960,7 +1964,7 @@ function TrainEndCard({
   onClose: () => void;
 }) {
   useEffect(() => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
   const won = !!o.who.me;
   return (
@@ -2118,7 +2122,7 @@ function StandingsList({ general, limit, highlight }: { general: Standing[]; lim
 // ── Championnat : fin d'une table ──
 function TableEndCard({ t, general, top }: { t: TableEnd; general: Standing[]; top: number }) {
   useEffect(() => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
   const w = t.ranking[0];
   return (
@@ -2173,7 +2177,7 @@ function LeagueEndCard({
   onClose: () => void;
 }) {
   useEffect(() => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
   return (
     <Cover top={top}>
@@ -2216,7 +2220,7 @@ function RankList({ ranking, crowns, highlight, out }: { ranking: Player[]; crow
 
 function ElimCard({ o, top }: { o: Overlay; top: number }) {
   useEffect(() => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
   }, []);
   return (
     <Cover top={top}>
@@ -2230,7 +2234,7 @@ function ElimCard({ o, top }: { o: Overlay; top: number }) {
 function ChampionCard({ o, manche, crowns, top }: { o: Overlay; manche: number; crowns: Crowns; top: number }) {
   const n = crowns[o.who.id]?.n ?? 1;
   useEffect(() => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
   return (
     <Cover top={top}>
@@ -2265,7 +2269,7 @@ function EndCard({ o, crowns, top, onRelaunch, onClose }: { o: Overlay; crowns: 
   const champ = (crowns[o.who.id]?.n ?? 0) === best ? o.who : (Object.values(crowns).find((c) => c.n === best)?.p ?? o.who);
   const champName = nameOf(champ);
   useEffect(() => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    void hx.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
   return (
     <Cover top={top}>

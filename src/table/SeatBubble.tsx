@@ -71,7 +71,7 @@ export function SeatBubble({ seat, p, base, speaking, muted, onPress, onMic, cam
             ) : seat.real ? (
               <Initial name={seat.name} size={size - 5} />
             ) : (
-              <Image source={photoUrl(seat.name)} style={{ width: size - 5, height: size - 5, borderRadius: (size - 5) / 2 }} />
+              <Image source={seat.photo ?? photoUrl(seat.name)} style={{ width: size - 5, height: size - 5, borderRadius: (size - 5) / 2 }} />
             )}
             {speaking && <TalkBars />}
           </LinearGradient>

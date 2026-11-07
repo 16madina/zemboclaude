@@ -17,6 +17,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { hx } from '../live/quiet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, goldGradient } from '../theme';
 import { DEENA_PHOTO } from '../table/data';
@@ -24,7 +25,7 @@ import { Initial } from '../live/LiveViewer';
 
 // Briques communes aux lives du Talk Show (Micro Ouvert)
 
-export const tap = () => void Haptics.selectionAsync().catch(() => {});
+export const tap = () => void hx.selectionAsync().catch(() => {});
 export const TINTS = ['#E9C46A', '#C9A0F0', '#7FD8A8', '#8DB8F2', '#F28DB2'];
 
 // Photos des personnes (homme/femme cohérent avec le prénom)
